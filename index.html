@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UINSI Library — Student Checkout System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- =====================================================
+       LOGIN PAGE
+       ===================================================== -->
+  <div id="login-page" class="page">
+    <div class="login-shell">
+
+      <div class="brand-panel">
+        <p class="brand-mark">UINSI Library</p>
+        <h1 class="brand-headline">Borrow what you<br>need, return it<br>on time.</h1>
+        <p class="brand-copy">
+          A simple checkout desk for students. Three books at a time,
+          seven days to read them.
+        </p>
+        <dl class="brand-rules">
+          <div>
+            <dt>3</dt>
+            <dd>books at once</dd>
+          </div>
+          <div>
+            <dt>7</dt>
+            <dd>days to return</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="login-card-wrap">
+        <div class="card login-card">
+          <h2>Sign in</h2>
+          <p class="subtitle">Enter your student details to open the catalog.</p>
+
+          <form id="login-form" novalidate>
+            <label for="student-id">Student ID</label>
+            <input type="text" id="student-id" placeholder="e.g. S001" autocomplete="off">
+
+            <label for="student-name">Name</label>
+            <input type="text" id="student-name" placeholder="e.g. Jane Doe" autocomplete="off">
+
+            <p id="login-error" class="error-message" hidden></p>
+
+            <button type="submit" class="primary-btn">Log In</button>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =====================================================
+       DASHBOARD PAGE
+       ===================================================== -->
+  <div id="dashboard-page" class="page" hidden>
+
+    <header class="app-header">
+      <div class="header-left">
+        <p class="brand-mark small">UINSI Library</p>
+        <h1>Dashboard</h1>
+      </div>
+      <div class="header-right">
+        <p id="welcome-text" class="welcome-text"></p>
+        <button id="logout-btn" class="secondary-btn">Log Out</button>
+      </div>
+    </header>
+
+    <div class="app-body">
+
+      <p id="action-message" class="action-message" hidden></p>
+
+      <section class="summary-strip">
+        <div class="summary-card">
+          <span class="summary-value" id="summary-total">0</span>
+          <span class="summary-label">Books in catalog</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-value" id="summary-available">0</span>
+          <span class="summary-label">Available now</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-value" id="summary-mine">0</span>
+          <span class="summary-label">Borrowed by you</span>
+        </div>
+      </section>
+
+      <main class="app-main">
+
+        <!-- Book catalog: ALL books with status badge + borrow action -->
+        <section class="panel">
+          <h2>Book Catalog</h2>
+          <div class="table-scroll">
+            <table id="books-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="books-table-body">
+                <!-- rows injected by script.js -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Available books: read-only, filtered to isBorrowed === false -->
+        <section class="panel">
+          <h2>Available Books</h2>
+          <div class="table-scroll">
+            <table id="available-books-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                </tr>
+              </thead>
+              <tbody id="available-books-table-body">
+                <!-- rows injected by script.js -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- My borrowed books -->
+        <section class="panel">
+          <h2>My Borrowed Books</h2>
+          <div class="table-scroll">
+            <table id="borrowed-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Borrowed On</th>
+                  <th>Due Date</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="borrowed-table-body">
+                <!-- rows injected by script.js -->
+              </tbody>
+            </table>
+          </div>
+          <p id="borrow-count-text" class="subtitle"></p>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+<script src="script.js"></script>
+</body>
+</html>
