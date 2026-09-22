@@ -45,7 +45,8 @@ const STUDENT_ID_PATTERN = /^S\d{3}$/;
 const VALID_STUDENTS = [
   { studentId: "S001", name: "Randy" },
   { studentId: "S002", name: "Raihan" },
-  { studentId: "S003", name: "Elsa" }
+  { studentId: "S003", name: "Elsa" },
+  { studentId: "S004", name: "uinsi" }
 ];
 
 /* ---------- 2. LocalStorage helpers (session + records) ---------- */
@@ -463,7 +464,7 @@ function renderBorrowedTable() {
       const actionCell = document.createElement("td");
       const returnBtn = document.createElement("button");
       returnBtn.textContent = "Return";
-      returnBtn.classList.add("secondary-btn");
+      returnBtn.classList.add("return-btn");
       returnBtn.addEventListener("click", () => handleReturn(record.recordId));
       actionCell.appendChild(returnBtn);
 
