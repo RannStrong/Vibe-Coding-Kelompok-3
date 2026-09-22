@@ -1,0 +1,37 @@
+[
+  {
+    "id": 1,
+    "judul": "Laskar Pelangi",
+    "penulis": "Andrea Hirata",
+    "tahun": 2005,
+    "status": "tersedia"
+  },
+  {
+    "id": 2,
+    "judul": "Bumi Manusia",
+    "penulis": "Pramoedya Ananta Toer",
+    "tahun": 1980,
+    "status": "tersedia"
+  },
+  {
+    "id": 3,
+    "judul": "Negeri 5 Menara",
+    "penulis": "Ahmad Fuadi",
+    "tahun": 2009,
+    "status": "dipinjam"
+  },
+  {
+    "id": 4,
+    "judul": "Filosofi Kopi",
+    "penulis": "Dee Lestari",
+    "tahun": 2006,
+    "status": "tersedia"
+  },
+  {
+    "id": 5,
+    "judul": "Sang Pemimpi",
+    "penulis": "Andrea Hirata",
+    "tahun": 2006,
+    "status": "tersedia"
+  }
+]
