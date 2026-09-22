@@ -11,7 +11,7 @@
     "judul": "Bumi Manusia",
     "penulis": "Pramoedya Ananta Toer",
     "tahun": 1980,
-    "status": "tersedia"
+    "status": "dipinjam"
   },
   {
     "id": 3,
@@ -25,7 +25,7 @@
     "judul": "Filosofi Kopi",
     "penulis": "Dee Lestari",
     "tahun": 2006,
-    "status": "tersedia"
+    "status": "dipinjam"
   },
   {
     "id": 5,
