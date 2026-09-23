@@ -70,7 +70,7 @@ Frontend berfungsi sebagai client yang berkomunikasi dengan service melalui HTTP
 
 Dokumentasi architecture lengkap dapat dilihat pada:
 
-`docs/architecture.md`
+[Architecture Documentation](docs/architecture.md)
 
 ---
 
@@ -114,9 +114,7 @@ http://localhost:3000
 
 Data buku disimpan dalam:
 
-```text
-book-service/data/books.json
-```
+[books.json](book-service/data/books.json)
 
 ### 2. Borrow Service
 
@@ -373,7 +371,7 @@ Testing dilakukan terhadap:
 
 **Dokumentasi lengkap:**
 
-`Testing Documentation`
+[Testing Documentation](docs/testing.md)
 
 ---
 
@@ -405,7 +403,7 @@ ke Book Service sebelum record peminjaman diubah menjadi returned.
 
 **Dokumentasi bug:**
 
-`Bug Report`
+[Bug Report](docs/bug-report.md)
 
 ---
 
@@ -429,7 +427,7 @@ Kode hasil AI tidak langsung digunakan tanpa pemeriksaan. Kode diperiksa, dijala
 
 **Dokumentasi AI:**
 
-`AI Coding Documentation`
+[AI Coding Documentation](docs/ai-coding.md)
 
 ---
 
@@ -493,7 +491,7 @@ Materi sharing session mencakup:
 
 **Materi lengkap:**
 
-`Sharing Session Documentation`
+[Sharing Session Documentation](docs/sharing-session.md)
 
 ---
 
