@@ -1,5 +1,17 @@
 # Vibe Coding Kelompok 3 — UINSI Library
 
+# Sistem Peminjaman Buku
+
+Sistem peminjaman buku kelompok 3.
+
+Anggota kelompok:
+
+- Muhammad Randy Maulana
+- Sofyan Al-Buqori Ramli
+- Hafiz Izzan Zaafarani
+- Exan Nabil Rifai
+- Cikal Fachri Amanta
+
 ## Deskripsi
 
 UINSI Library adalah aplikasi perpustakaan sederhana yang dikembangkan dari project perpustakaan sebelumnya menjadi arsitektur berbasis microservice.
