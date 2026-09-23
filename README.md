@@ -435,15 +435,3 @@ Kedua service berkomunikasi menggunakan HTTP API.
 AI Coding Tool digunakan untuk membantu pengembangan, tetapi hasil kode tetap
 diperiksa dan diuji kembali. Proses testing juga digunakan untuk menemukan dan
 memperbaiki bug sebelum project digunakan sebagai hasil akhir.
-
-
-### Setelah paste
-
-Simpan `README.md` dengan **Ctrl + S**.
-
-Karena PR sebelumnya sudah di-merge, untuk perubahan README ini kamu bisa langsung:
-
-```powershell
-git add README.md
-git commit -m "docs: add project README"
-git push origin main
