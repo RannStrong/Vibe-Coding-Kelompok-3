@@ -214,25 +214,69 @@ app.post("/peminjaman", async (req, res) => {
 /* ---------- PATCH /peminjaman/:recordId/kembalikan ----------
    TIDAK DIUBAH.
    Body: { studentId }  → dipakai untuk cek kepemilikan */
-app.patch("/peminjaman/:recordId/kembalikan", (req, res) => {
+app.patch("/peminjaman/:recordId/kembalikan", async (req, res) => {
   const { recordId } = req.params;
   const { studentId } = req.body;
 
+  if (!studentId || typeof studentId !== "string") {
+    return res.status(400).json({
+      message: "studentId wajib diisi untuk pengembalian.",
+    });
+  }
+
+  const normalizedStudentId = normalizeStudentId(studentId);
   const record = records.find((r) => r.recordId === recordId);
 
   if (!record) {
-    return res.status(404).json({ message: "Data peminjaman tidak ditemukan." });
+    return res.status(404).json({
+      message: "Data peminjaman tidak ditemukan.",
+    });
   }
 
   if (record.status === "returned") {
-    return res.status(400).json({ message: "Buku ini sudah dikembalikan sebelumnya." });
+    return res.status(400).json({
+      message: "Buku ini sudah dikembalikan sebelumnya.",
+    });
   }
 
-  // Rule: hanya mahasiswa yang meminjam yang boleh mengembalikan
-  if (studentId && normalizeStudentId(studentId) !== record.studentId) {
-    return res.status(403).json({ message: "Kamu tidak berhak mengembalikan buku ini." });
+  if (normalizedStudentId !== record.studentId) {
+    return res.status(403).json({
+      message: "Kamu tidak berhak mengembalikan buku ini.",
+    });
   }
 
+  // Ubah status buku di Book Service terlebih dahulu.
+  try {
+    const { status, payload } = await callBookService(
+      `/books/${record.bookId}/kembali`,
+      {
+        method: "PATCH",
+      }
+    );
+
+    if (status === 404) {
+      return res.status(404).json({
+        message:
+          payload?.message ||
+          `Buku dengan id ${record.bookId} tidak ditemukan.`,
+      });
+    }
+
+    if (status !== 200) {
+      return res.status(409).json({
+        message:
+          payload?.message ||
+          "Status buku gagal diubah. Pengembalian dibatalkan.",
+      });
+    }
+  } catch (err) {
+    return res.status(502).json({
+      message:
+        "Book Service tidak dapat diakses. Pengembalian dibatalkan.",
+    });
+  }
+
+  // Hanya ubah record setelah Book Service berhasil.
   record.status = "returned";
   record.returnDate = new Date().toISOString();
 
