@@ -52,4 +52,3 @@ Setelah perbaikan:
 - Record peminjaman → `returned` ✅
 - Status buku → `tersedia` ✅
 - Data antar-service kembali sinkron ✅
-
