@@ -1,249 +1,383 @@
 // ========================================================
 // BOOK SERVICE
-// REST API sederhana untuk mengelola data buku perpustakaan
-// Penyimpanan data: file JSON (data/books.json)
-//
-// CATATAN PENTING:
-// Book Service HANYA bertanggung jawab atas data & status buku.
-// Logika peminjaman (siapa meminjam, tanggal pinjam, denda, dll)
-// TIDAK ada di sini — itu tugas service lain (Borrow Service)
-// yang akan memanggil endpoint-endpoint Book Service ini untuk
-// mengubah status buku.
+// REST API untuk mengelola data buku perpustakaan
+// Penyimpanan data: MySQL
 // ========================================================
+require("dotenv").config();
 
 const express = require("express");
-const fs = require("fs");
-const path = require("path");
+const db = require("./db");
 
 const app = express();
 const PORT = 3000;
 
-// Lokasi file JSON yang menjadi "database" kita
-const DB_PATH = path.join(__dirname, "data", "books.json");
+const API_KEY = process.env.API_KEY;
 
-// Supaya Express bisa membaca body request berformat JSON
+function cekApiKey(req, res, next) {
+  const apiKey = req.headers["x-api-key"];
+
+  if (!apiKey || apiKey !== API_KEY) {
+    return res.status(401).json({
+      message: "API Key tidak valid atau tidak ditemukan"
+    });
+  }
+
+  next();
+}
+
+// Supaya Express bisa membaca body JSON
 app.use(express.json());
 
 // --------------------------------------------------------
 // CORS
-// Wajib ada karena Frontend (index.html) dan Book Service ini
-// jalan di origin/port yang berbeda (mis. Live Server di 5500,
-// Book Service di 3000). Tanpa ini, browser akan MEMBLOKIR
-// semua fetch() dari Frontend ke sini walaupun server-nya jalan.
 // --------------------------------------------------------
+
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+  );
   res.header("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
+
   next();
 });
 
 // --------------------------------------------------------
-// FUNGSI BANTUAN (HELPER) UNTUK BACA & TULIS FILE JSON
+// GET /books
+// Menampilkan semua buku
 // --------------------------------------------------------
 
-function bacaSemuaBuku() {
-  const data = fs.readFileSync(DB_PATH, "utf-8");
-  return JSON.parse(data);
-}
+app.get("/books", cekApiKey, async (req, res) => {
+  try {
+    const [books] = await db.query("SELECT * FROM books");
 
-function simpanSemuaBuku(daftarBuku) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(daftarBuku, null, 2), "utf-8");
-}
+    res.json({
+      total: books.length,
+      data: books,
+    });
+  } catch (error) {
+    console.error(error);
 
-// Menghasilkan id baru yang belum dipakai (id tertinggi + 1)
-function idBaru(daftarBuku) {
-  if (daftarBuku.length === 0) return 1;
-  const idTertinggi = Math.max(...daftarBuku.map((b) => b.id));
-  return idTertinggi + 1;
-}
-
-// --------------------------------------------------------
-// ENDPOINT 1: GET /books
-// Menampilkan SELURUH buku yang ada di perpustakaan
-// --------------------------------------------------------
-app.get("/books", (req, res) => {
-  const semuaBuku = bacaSemuaBuku();
-  res.json({
-    total: semuaBuku.length,
-    data: semuaBuku,
-  });
+    res.status(500).json({
+      message: "Gagal mengambil data buku",
+    });
+  }
 });
 
 // --------------------------------------------------------
-// ENDPOINT 2: GET /books/available
-// Menampilkan HANYA buku yang statusnya "tersedia"
-// Catatan: rute ini harus didaftarkan SEBELUM "/books/:id"
-// supaya kata "available" tidak dianggap sebagai :id
+// GET /books/available
+// Menampilkan buku yang tersedia
 // --------------------------------------------------------
-app.get("/books/available", (req, res) => {
-  const semuaBuku = bacaSemuaBuku();
-  const bukuTersedia = semuaBuku.filter((buku) => buku.status === "tersedia");
-  res.json({
-    total: bukuTersedia.length,
-    data: bukuTersedia,
-  });
+
+app.get("/books/available", cekApiKey, async (req, res) => {
+  try {
+    const [books] = await db.query(
+      "SELECT * FROM books WHERE status = ?",
+      ["tersedia"]
+    );
+
+    res.json({
+      total: books.length,
+      data: books,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      message: "Gagal mengambil buku yang tersedia",
+    });
+  }
 });
 
 // --------------------------------------------------------
-// ENDPOINT 3: GET /books/:id
-// Mengambil detail satu buku berdasarkan ID
+// GET /books/:id
+// Mengambil satu buku berdasarkan ID
 // --------------------------------------------------------
-app.get("/books/:id", (req, res) => {
+
+app.get("/books/:id", cekApiKey, async (req, res) => {
   const id = parseInt(req.params.id);
 
   if (Number.isNaN(id)) {
-    return res.status(400).json({ message: "id harus berupa angka" });
-  }
-
-  const semuaBuku = bacaSemuaBuku();
-  const buku = semuaBuku.find((b) => b.id === id);
-
-  if (!buku) {
-    return res.status(404).json({ message: `Buku dengan id ${id} tidak ditemukan` });
-  }
-
-  res.json({ data: buku });
-});
-
-// --------------------------------------------------------
-// ENDPOINT 4 (BARU): POST /books
-// Menambahkan buku baru ke katalog
-// Body wajib: { judul, penulis, tahun }
-// Status buku baru otomatis "tersedia"
-// --------------------------------------------------------
-app.post("/books", (req, res) => {
-  const { judul, penulis, tahun } = req.body;
-
-  if (!judul || typeof judul !== "string" || judul.trim() === "") {
-    return res.status(400).json({ message: "judul wajib diisi dan berupa teks" });
-  }
-  if (!penulis || typeof penulis !== "string" || penulis.trim() === "") {
-    return res.status(400).json({ message: "penulis wajib diisi dan berupa teks" });
-  }
-  if (tahun !== undefined && (typeof tahun !== "number" || !Number.isInteger(tahun))) {
-    return res.status(400).json({ message: "tahun harus berupa angka" });
-  }
-
-  const semuaBuku = bacaSemuaBuku();
-
-  const bukuBaru = {
-    id: idBaru(semuaBuku),
-    judul: judul.trim(),
-    penulis: penulis.trim(),
-    tahun: tahun ?? null,
-    status: "tersedia",
-  };
-
-  semuaBuku.push(bukuBaru);
-  simpanSemuaBuku(semuaBuku);
-
-  res.status(201).json({ message: `Buku "${bukuBaru.judul}" berhasil ditambahkan`, data: bukuBaru });
-});
-
-// --------------------------------------------------------
-// ENDPOINT 5 (BARU): DELETE /books/:id
-// Menghapus buku dari katalog
-// Buku yang sedang berstatus "dipinjam" tidak boleh dihapus
-// dulu, supaya data peminjaman yang mereferensikannya (di
-// Borrow Service nanti) tidak jadi rusak/menggantung.
-// --------------------------------------------------------
-app.delete("/books/:id", (req, res) => {
-  const id = parseInt(req.params.id);
-
-  if (Number.isNaN(id)) {
-    return res.status(400).json({ message: "id harus berupa angka" });
-  }
-
-  const semuaBuku = bacaSemuaBuku();
-  const buku = semuaBuku.find((b) => b.id === id);
-
-  if (!buku) {
-    return res.status(404).json({ message: `Buku dengan id ${id} tidak ditemukan` });
-  }
-
-  if (buku.status === "dipinjam") {
     return res.status(400).json({
-      message: "Buku yang sedang dipinjam tidak bisa dihapus. Tunggu sampai dikembalikan.",
+      message: "id harus berupa angka",
     });
   }
 
-  const bukuSetelahHapus = semuaBuku.filter((b) => b.id !== id);
-  simpanSemuaBuku(bukuSetelahHapus);
+  try {
+    const [books] = await db.query(
+      "SELECT * FROM books WHERE id = ?",
+      [id]
+    );
 
-  res.json({ message: `Buku "${buku.judul}" berhasil dihapus` });
+    if (books.length === 0) {
+      return res.status(404).json({
+        message: `Buku dengan id ${id} tidak ditemukan`,
+      });
+    }
+
+    res.json({
+      data: books[0],
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      message: "Gagal mengambil data buku",
+    });
+  }
 });
 
 // --------------------------------------------------------
-// ENDPOINT 6: PATCH /books/:id/pinjam
-// Mengubah status buku menjadi "dipinjam"
+// POST /books
+// Menambahkan buku baru
 // --------------------------------------------------------
-app.patch("/books/:id/pinjam", (req, res) => {
+
+app.post("/books", cekApiKey, async (req, res) => {
+  const { judul, penulis, tahun } = req.body;
+
+  if (!judul || typeof judul !== "string" || judul.trim() === "") {
+    return res.status(400).json({
+      message: "judul wajib diisi dan berupa teks",
+    });
+  }
+
+  if (
+    !penulis ||
+    typeof penulis !== "string" ||
+    penulis.trim() === ""
+  ) {
+    return res.status(400).json({
+      message: "penulis wajib diisi dan berupa teks",
+    });
+  }
+
+  if (
+    tahun !== undefined &&
+    tahun !== null &&
+    (typeof tahun !== "number" || !Number.isInteger(tahun))
+  ) {
+    return res.status(400).json({
+      message: "tahun harus berupa angka",
+    });
+  }
+
+  try {
+    const [result] = await db.query(
+      `INSERT INTO books (judul, penulis, tahun, status)
+       VALUES (?, ?, ?, ?)`,
+      [
+        judul.trim(),
+        penulis.trim(),
+        tahun ?? null,
+        "tersedia",
+      ]
+    );
+
+    const [books] = await db.query(
+      "SELECT * FROM books WHERE id = ?",
+      [result.insertId]
+    );
+
+    res.status(201).json({
+      message: `Buku "${judul.trim()}" berhasil ditambahkan`,
+      data: books[0],
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      message: "Gagal menambahkan buku",
+    });
+  }
+});
+
+// --------------------------------------------------------
+// DELETE /books/:id
+// Menghapus buku
+// --------------------------------------------------------
+
+app.delete("/books/:id", cekApiKey, async (req, res) => {
   const id = parseInt(req.params.id);
 
   if (Number.isNaN(id)) {
-    return res.status(400).json({ message: "id harus berupa angka" });
+    return res.status(400).json({
+      message: "id harus berupa angka",
+    });
   }
 
-  const semuaBuku = bacaSemuaBuku();
-  const buku = semuaBuku.find((b) => b.id === id);
+  try {
+    const [books] = await db.query(
+      "SELECT * FROM books WHERE id = ?",
+      [id]
+    );
 
-  if (!buku) {
-    return res.status(404).json({ message: `Buku dengan id ${id} tidak ditemukan` });
+    if (books.length === 0) {
+      return res.status(404).json({
+        message: `Buku dengan id ${id} tidak ditemukan`,
+      });
+    }
+
+    const buku = books[0];
+
+    if (buku.status === "dipinjam") {
+      return res.status(400).json({
+        message:
+          "Buku yang sedang dipinjam tidak bisa dihapus. Tunggu sampai dikembalikan.",
+      });
+    }
+
+    await db.query(
+      "DELETE FROM books WHERE id = ?",
+      [id]
+    );
+
+    res.json({
+      message: `Buku "${buku.judul}" berhasil dihapus`,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      message: "Gagal menghapus buku",
+    });
   }
-
-  if (buku.status === "dipinjam") {
-    return res.status(400).json({ message: "Buku ini sudah dalam status dipinjam" });
-  }
-
-  buku.status = "dipinjam";
-  simpanSemuaBuku(semuaBuku);
-
-  res.json({ message: `Buku "${buku.judul}" berhasil diubah menjadi dipinjam`, data: buku });
 });
 
 // --------------------------------------------------------
-// ENDPOINT 7: PATCH /books/:id/kembali
-// Mengubah status buku menjadi "tersedia" kembali
+// PATCH /books/:id/pinjam
+// Mengubah status menjadi dipinjam
 // --------------------------------------------------------
-app.patch("/books/:id/kembali", (req, res) => {
+
+app.patch("/books/:id/pinjam", cekApiKey, async (req, res) => {
   const id = parseInt(req.params.id);
 
   if (Number.isNaN(id)) {
-    return res.status(400).json({ message: "id harus berupa angka" });
+    return res.status(400).json({
+      message: "id harus berupa angka",
+    });
   }
 
-  const semuaBuku = bacaSemuaBuku();
-  const buku = semuaBuku.find((b) => b.id === id);
+  try {
+    const [books] = await db.query(
+      "SELECT * FROM books WHERE id = ?",
+      [id]
+    );
 
-  if (!buku) {
-    return res.status(404).json({ message: `Buku dengan id ${id} tidak ditemukan` });
+    if (books.length === 0) {
+      return res.status(404).json({
+        message: `Buku dengan id ${id} tidak ditemukan`,
+      });
+    }
+
+    const buku = books[0];
+
+    if (buku.status === "dipinjam") {
+      return res.status(400).json({
+        message: "Buku ini sudah dalam status dipinjam",
+      });
+    }
+
+    await db.query(
+      "UPDATE books SET status = ? WHERE id = ?",
+      ["dipinjam", id]
+    );
+
+    const [updatedBooks] = await db.query(
+      "SELECT * FROM books WHERE id = ?",
+      [id]
+    );
+
+    res.json({
+      message: `Buku "${buku.judul}" berhasil diubah menjadi dipinjam`,
+      data: updatedBooks[0],
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      message: "Gagal mengubah status buku",
+    });
   }
-
-  if (buku.status === "tersedia") {
-    return res.status(400).json({ message: "Buku ini sudah dalam status tersedia" });
-  }
-
-  buku.status = "tersedia";
-  simpanSemuaBuku(semuaBuku);
-
-  res.json({ message: `Buku "${buku.judul}" berhasil diubah menjadi tersedia`, data: buku });
 });
 
 // --------------------------------------------------------
-// Menangani route yang tidak dikenal (404 umum)
+// PATCH /books/:id/kembali
+// Mengubah status menjadi tersedia
 // --------------------------------------------------------
+
+app.patch("/books/:id/kembali", cekApiKey, async (req, res) => {
+  const id = parseInt(req.params.id);
+
+  if (Number.isNaN(id)) {
+    return res.status(400).json({
+      message: "id harus berupa angka",
+    });
+  }
+
+  try {
+    const [books] = await db.query(
+      "SELECT * FROM books WHERE id = ?",
+      [id]
+    );
+
+    if (books.length === 0) {
+      return res.status(404).json({
+        message: `Buku dengan id ${id} tidak ditemukan`,
+      });
+    }
+
+    const buku = books[0];
+
+    if (buku.status === "tersedia") {
+      return res.status(400).json({
+        message: "Buku ini sudah dalam status tersedia",
+      });
+    }
+
+    await db.query(
+      "UPDATE books SET status = ? WHERE id = ?",
+      ["tersedia", id]
+    );
+
+    const [updatedBooks] = await db.query(
+      "SELECT * FROM books WHERE id = ?",
+      [id]
+    );
+
+    res.json({
+      message: `Buku "${buku.judul}" berhasil diubah menjadi tersedia`,
+      data: updatedBooks[0],
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      message: "Gagal mengubah status buku",
+    });
+  }
+});
+
+// --------------------------------------------------------
+// 404
+// --------------------------------------------------------
+
 app.use((req, res) => {
-  res.status(404).json({ message: "Endpoint tidak ditemukan. Coba /books" });
+  res.status(404).json({
+    message: "Endpoint tidak ditemukan. Coba /books",
+  });
 });
 
 // --------------------------------------------------------
 // Menjalankan server
 // --------------------------------------------------------
+
 app.listen(PORT, () => {
-  console.log(`Book Service berjalan di http://localhost:${PORT}`);
+  console.log(
+    `Book Service berjalan di http://localhost:${PORT}`
+  );
 });
