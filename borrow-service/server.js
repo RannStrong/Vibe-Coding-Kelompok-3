@@ -19,6 +19,9 @@
 
 const express = require("express");
 const cors = require("cors");
+require("dotenv").config();
+
+const db = require("./db");
 
 const app = express();
 app.use(cors());
@@ -29,11 +32,20 @@ const MAX_ACTIVE_BORROWS = 3;
 const BORROW_PERIOD_DAYS = 7;
 const BOOK_SERVICE_URL = "http://localhost:3000";
 
-// Penyimpanan in-memory (prototipe). Kalau butuh data yang tidak
-// hilang saat server di-restart, ini tinggal diganti ke SQLite/file
-// JSON — struktur endpoint di bawah tidak perlu berubah.
-let records = [];
-let nextId = 1;
+const API_KEY = process.env.API_KEY;
+const BOOK_SERVICE_API_KEY = process.env.BOOK_SERVICE_API_KEY;
+
+app.use((req, res, next) => {
+    const apiKey = req.headers["x-api-key"];
+
+    if (!apiKey || apiKey !== API_KEY) {
+        return res.status(401).json({
+            message: "API Key tidak valid atau tidak ditemukan."
+        });
+    }
+
+    next();
+});
 
 function normalizeStudentId(id) {
   return String(id || "").trim().toUpperCase();
@@ -58,41 +70,80 @@ function countActiveBorrows(studentId) {
    (mis. Book Service crash dan Express mengembalikan HTML)
    sama-sama tertangani, tidak membuat proses ini crash. */
 async function callBookService(path, options) {
-  let response;
-  try {
-    response = await fetch(`${BOOK_SERVICE_URL}${path}`, options);
-  } catch (err) {
-    const error = new Error("Book Service tidak dapat diakses.");
-    error.type = "unreachable";
-    throw error;
-  }
+    let response;
 
-  let payload;
-  try {
-    payload = await response.json();
-  } catch (err) {
-    const error = new Error("Book Service mengembalikan response yang tidak valid.");
-    error.type = "invalid_response";
-    throw error;
-  }
+    try {
+        response = await fetch(`${BOOK_SERVICE_URL}${path}`, {
+            ...options,
+            headers: {
+                ...(options?.headers || {}),
+                "X-API-Key": BOOK_SERVICE_API_KEY
+            }
+        });
+    } catch (err) {
+        const error = new Error("Book Service tidak dapat diakses.");
+        error.type = "unreachable";
+        throw error;
+    }
 
-  return { status: response.status, payload };
+    let payload;
+
+    try {
+        payload = await response.json();
+    } catch (err) {
+        const error = new Error(
+            "Book Service mengembalikan response yang tidak valid."
+        );
+        error.type = "invalid_response";
+        throw error;
+    }
+
+    return {
+        status: response.status,
+        payload
+    };
 }
 
 /* ---------- GET /peminjaman ----------
    TIDAK DIUBAH.
    Semua record, atau difilter dengan ?studentId=S001
    (dipakai untuk gantikan getRecords() di frontend) */
-app.get("/peminjaman", (req, res) => {
-  const { studentId } = req.query;
+app.get("/peminjaman", async (req, res) => {
+    const { studentId } = req.query;
 
-  if (!studentId) {
-    return res.json({ data: records });
-  }
+    try {
+        let query = `
+            SELECT
+                record_id AS recordId,
+                student_id AS studentId,
+                book_id AS bookId,
+                title,
+                borrow_date AS borrowDate,
+                due_date AS dueDate,
+                return_date AS returnDate,
+                status
+            FROM borrowings
+        `;
 
-  const normalized = normalizeStudentId(studentId);
-  const filtered = records.filter((r) => normalizeStudentId(r.studentId) === normalized);
-  res.json({ data: filtered });
+        let params = [];
+
+        if (studentId) {
+            query += " WHERE student_id = ?";
+            params.push(normalizeStudentId(studentId));
+        }
+
+        query += " ORDER BY id DESC";
+
+        const [rows] = await db.query(query, params);
+
+        res.json({ data: rows });
+    } catch (error) {
+        console.error("Gagal mengambil data peminjaman:", error.message);
+
+        res.status(500).json({
+            message: "Gagal mengambil data peminjaman."
+        });
+    }
 });
 
 /* ---------- POST /peminjaman ----------
@@ -111,176 +162,347 @@ app.get("/peminjaman", (req, res) => {
       - gagal (network / bukan 200)  -> ROLLBACK record, lalu error ke frontend
    7. Berhasil -> 201 dengan record final */
 app.post("/peminjaman", async (req, res) => {
-  const { studentId, bookId } = req.body;
+    const { studentId, bookId } = req.body;
 
-  if (!studentId || !bookId) {
-    return res.status(400).json({ message: "studentId dan bookId wajib diisi." });
-  }
-
-  const normalizedStudentId = normalizeStudentId(studentId);
-
-  // --- Ambil data buku dari Book Service ---
-  let book;
-  try {
-    const { status, payload } = await callBookService(`/books/${bookId}`, { method: "GET" });
-
-    if (status === 404) {
-      return res.status(404).json({
-        message: payload?.message || `Buku dengan id ${bookId} tidak ditemukan.`,
-      });
+    if (!studentId || !bookId) {
+        return res.status(400).json({
+            message: "studentId dan bookId wajib diisi."
+        });
     }
 
-    if (status !== 200) {
-      return res.status(502).json({
-        message: "Book Service mengembalikan respons yang tidak terduga saat mengambil data buku.",
-      });
+    const normalizedStudentId = normalizeStudentId(studentId);
+    const parsedBookId = Number(bookId);
+
+    if (!Number.isInteger(parsedBookId)) {
+        return res.status(400).json({
+            message: "bookId harus berupa angka."
+        });
     }
 
-    book = payload?.data;
-    if (!book) {
-      return res.status(502).json({
-        message: "Book Service mengembalikan data buku yang tidak sesuai format.",
-      });
+    // --- Ambil data buku dari Book Service ---
+    let book;
+
+    try {
+        const { status, payload } = await callBookService(
+            `/books/${parsedBookId}`,
+            { method: "GET" }
+        );
+
+        if (status === 404) {
+            return res.status(404).json({
+                message:
+                    payload?.message ||
+                    `Buku dengan id ${parsedBookId} tidak ditemukan.`
+            });
+        }
+
+        if (status !== 200) {
+            return res.status(502).json({
+                message:
+                    "Book Service mengembalikan respons yang tidak terduga saat mengambil data buku."
+            });
+        }
+
+        book = payload?.data;
+
+        if (!book) {
+            return res.status(502).json({
+                message:
+                    "Book Service mengembalikan data buku yang tidak sesuai format."
+            });
+        }
+    } catch (err) {
+        return res.status(502).json({
+            message: "Book Service tidak dapat diakses."
+        });
     }
-  } catch (err) {
-    return res.status(502).json({ message: "Book Service tidak dapat diakses." });
-  }
 
-  // Rule: buku harus berstatus "tersedia"
-  if (book.status !== "tersedia") {
-    return res.status(400).json({
-      message: `Buku "${book.judul}" sedang tidak tersedia (status: ${book.status}).`,
-    });
-  }
-
-  // Rule: maksimal 3 buku aktif per mahasiswa
-  const activeCount = countActiveBorrows(normalizedStudentId);
-  if (activeCount >= MAX_ACTIVE_BORROWS) {
-    return res.status(400).json({
-      message: `Mahasiswa sudah meminjam ${MAX_ACTIVE_BORROWS} buku aktif. Batas maksimum tercapai.`,
-    });
-  }
-
-  // Rule: satu buku tidak boleh punya dua record aktif sekaligus
-  // (jaga-jaga kalau ada double-submit atau race condition)
-  const sudahAda = records.find((r) => r.bookId === bookId && r.status !== "returned");
-  if (sudahAda) {
-    return res.status(400).json({ message: "Buku ini sudah tercatat sedang dipinjam." });
-  }
-
-  const borrowDate = new Date().toISOString();
-  const dueDate = addDays(borrowDate, BORROW_PERIOD_DAYS);
-
-  const record = {
-    recordId: `R${nextId++}`,
-    studentId: normalizedStudentId,
-    bookId,
-    title: book.judul,
-    borrowDate,
-    dueDate,
-    status: "active",
-  };
-
-  records.push(record);
-
-  // --- Beri tahu Book Service bahwa buku ini sekarang dipinjam ---
-  try {
-    const { status, payload } = await callBookService(`/books/${bookId}/pinjam`, {
-      method: "PATCH",
-    });
-
-    if (status !== 200) {
-      // ROLLBACK: batalkan record yang baru saja dibuat
-      records = records.filter((r) => r.recordId !== record.recordId);
-
-      return res.status(409).json({
-        message:
-          payload?.message ||
-          "Gagal mengubah status buku di Book Service. Peminjaman dibatalkan.",
-      });
+    // Rule: buku harus tersedia
+    if (book.status !== "tersedia") {
+        return res.status(400).json({
+            message:
+                `Buku "${book.judul}" sedang tidak tersedia (status: ${book.status}).`
+        });
     }
-  } catch (err) {
-    // ROLLBACK: Book Service tidak terjangkau setelah record dibuat
-    records = records.filter((r) => r.recordId !== record.recordId);
 
-    return res.status(502).json({
-      message: "Book Service tidak dapat diakses saat mengubah status buku. Peminjaman dibatalkan.",
-    });
-  }
+    try {
+        // --- Cek jumlah buku aktif mahasiswa ---
+        const [activeRows] = await db.query(
+            `
+            SELECT COUNT(*) AS jumlah
+            FROM borrowings
+            WHERE student_id = ?
+            AND status = 'active'
+            `,
+            [normalizedStudentId]
+        );
 
-  res.status(201).json({ data: record });
+        const activeCount = activeRows[0].jumlah;
+
+        if (activeCount >= MAX_ACTIVE_BORROWS) {
+            return res.status(400).json({
+                message:
+                    `Mahasiswa sudah meminjam ${MAX_ACTIVE_BORROWS} buku aktif. Batas maksimum tercapai.`
+            });
+        }
+
+        // --- Cek apakah buku sudah dipinjam ---
+        const [existingRows] = await db.query(
+            `
+            SELECT record_id
+            FROM borrowings
+            WHERE book_id = ?
+            AND status = 'active'
+            LIMIT 1
+            `,
+            [parsedBookId]
+        );
+
+        if (existingRows.length > 0) {
+            return res.status(400).json({
+                message: "Buku ini sudah tercatat sedang dipinjam."
+            });
+        }
+
+        // --- Buat tanggal peminjaman ---
+        const borrowDate = new Date();
+        const dueDate = new Date(borrowDate);
+
+        dueDate.setDate(
+            dueDate.getDate() + BORROW_PERIOD_DAYS
+        );
+
+        // ID transaksi
+        const recordId = `R${Date.now()}`;
+
+        // --- Simpan ke MySQL ---
+        await db.query(
+            `
+            INSERT INTO borrowings
+            (
+                record_id,
+                student_id,
+                book_id,
+                title,
+                borrow_date,
+                due_date,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'active')
+            `,
+            [
+                recordId,
+                normalizedStudentId,
+                parsedBookId,
+                book.judul,
+                borrowDate,
+                dueDate
+            ]
+        );
+
+        // --- Ubah status buku di Book Service ---
+        try {
+            const { status, payload } = await callBookService(
+                `/books/${parsedBookId}/pinjam`,
+                {
+                    method: "PATCH"
+                }
+            );
+
+            if (status !== 200) {
+                // ROLLBACK database
+                await db.query(
+                    "DELETE FROM borrowings WHERE record_id = ?",
+                    [recordId]
+                );
+
+                return res.status(409).json({
+                    message:
+                        payload?.message ||
+                        "Gagal mengubah status buku di Book Service. Peminjaman dibatalkan."
+                });
+            }
+        } catch (err) {
+            // ROLLBACK database
+            await db.query(
+                "DELETE FROM borrowings WHERE record_id = ?",
+                [recordId]
+            );
+
+            return res.status(502).json({
+                message:
+                    "Book Service tidak dapat diakses saat mengubah status buku. Peminjaman dibatalkan."
+            });
+        }
+
+        // --- Ambil kembali data yang baru dibuat ---
+        const [rows] = await db.query(
+            `
+            SELECT
+                record_id AS recordId,
+                student_id AS studentId,
+                book_id AS bookId,
+                title,
+                borrow_date AS borrowDate,
+                due_date AS dueDate,
+                return_date AS returnDate,
+                status
+            FROM borrowings
+            WHERE record_id = ?
+            `,
+            [recordId]
+        );
+
+        res.status(201).json({
+            data: rows[0]
+        });
+
+    } catch (error) {
+        console.error(
+            "Gagal membuat peminjaman:",
+            error.message
+        );
+
+        res.status(500).json({
+            message: "Gagal menyimpan data peminjaman."
+        });
+    }
 });
 
 /* ---------- PATCH /peminjaman/:recordId/kembalikan ----------
    TIDAK DIUBAH.
    Body: { studentId }  → dipakai untuk cek kepemilikan */
 app.patch("/peminjaman/:recordId/kembalikan", async (req, res) => {
-  const { recordId } = req.params;
-  const { studentId } = req.body;
+    const { recordId } = req.params;
+    const { studentId } = req.body;
 
-  if (!studentId || typeof studentId !== "string") {
-    return res.status(400).json({
-      message: "studentId wajib diisi untuk pengembalian.",
-    });
-  }
-
-  const normalizedStudentId = normalizeStudentId(studentId);
-  const record = records.find((r) => r.recordId === recordId);
-
-  if (!record) {
-    return res.status(404).json({
-      message: "Data peminjaman tidak ditemukan.",
-    });
-  }
-
-  if (record.status === "returned") {
-    return res.status(400).json({
-      message: "Buku ini sudah dikembalikan sebelumnya.",
-    });
-  }
-
-  if (normalizedStudentId !== record.studentId) {
-    return res.status(403).json({
-      message: "Kamu tidak berhak mengembalikan buku ini.",
-    });
-  }
-
-  // Ubah status buku di Book Service terlebih dahulu.
-  try {
-    const { status, payload } = await callBookService(
-      `/books/${record.bookId}/kembali`,
-      {
-        method: "PATCH",
-      }
-    );
-
-    if (status === 404) {
-      return res.status(404).json({
-        message:
-          payload?.message ||
-          `Buku dengan id ${record.bookId} tidak ditemukan.`,
-      });
+    if (!studentId || typeof studentId !== "string") {
+        return res.status(400).json({
+            message: "studentId wajib diisi untuk pengembalian."
+        });
     }
 
-    if (status !== 200) {
-      return res.status(409).json({
-        message:
-          payload?.message ||
-          "Status buku gagal diubah. Pengembalian dibatalkan.",
-      });
+    const normalizedStudentId = normalizeStudentId(studentId);
+
+    try {
+        // Cari data peminjaman di MySQL
+        const [rows] = await db.query(
+            `
+            SELECT
+                record_id AS recordId,
+                student_id AS studentId,
+                book_id AS bookId,
+                title,
+                borrow_date AS borrowDate,
+                due_date AS dueDate,
+                return_date AS returnDate,
+                status
+            FROM borrowings
+            WHERE record_id = ?
+            LIMIT 1
+            `,
+            [recordId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({
+                message: "Data peminjaman tidak ditemukan."
+            });
+        }
+
+        const record = rows[0];
+
+        // Cek apakah sudah dikembalikan
+        if (record.status === "returned") {
+            return res.status(400).json({
+                message: "Buku ini sudah dikembalikan sebelumnya."
+            });
+        }
+
+        // Cek apakah mahasiswa yang mengembalikan adalah peminjam
+        if (normalizedStudentId !== record.studentId) {
+            return res.status(403).json({
+                message: "Kamu tidak berhak mengembalikan buku ini."
+            });
+        }
+
+        // --- Ubah status buku di Book Service ---
+        try {
+            const { status, payload } = await callBookService(
+                `/books/${record.bookId}/kembali`,
+                {
+                    method: "PATCH"
+                }
+            );
+
+            if (status === 404) {
+                return res.status(404).json({
+                    message:
+                        payload?.message ||
+                        `Buku dengan id ${record.bookId} tidak ditemukan.`
+                });
+            }
+
+            if (status !== 200) {
+                return res.status(409).json({
+                    message:
+                        payload?.message ||
+                        "Status buku gagal diubah. Pengembalian dibatalkan."
+                });
+            }
+        } catch (err) {
+            return res.status(502).json({
+                message:
+                    "Book Service tidak dapat diakses. Pengembalian dibatalkan."
+            });
+        }
+
+        // --- Update data peminjaman di MySQL ---
+        const returnDate = new Date();
+
+        await db.query(
+            `
+            UPDATE borrowings
+            SET status = 'returned',
+                return_date = ?
+            WHERE record_id = ?
+            `,
+            [returnDate, recordId]
+        );
+
+        // Ambil data terbaru
+        const [updatedRows] = await db.query(
+            `
+            SELECT
+                record_id AS recordId,
+                student_id AS studentId,
+                book_id AS bookId,
+                title,
+                borrow_date AS borrowDate,
+                due_date AS dueDate,
+                return_date AS returnDate,
+                status
+            FROM borrowings
+            WHERE record_id = ?
+            LIMIT 1
+            `,
+            [recordId]
+        );
+
+        res.json({
+            data: updatedRows[0]
+        });
+
+    } catch (error) {
+        console.error(
+            "Gagal mengembalikan buku:",
+            error.message
+        );
+
+        res.status(500).json({
+            message: "Gagal memproses pengembalian buku."
+        });
     }
-  } catch (err) {
-    return res.status(502).json({
-      message:
-        "Book Service tidak dapat diakses. Pengembalian dibatalkan.",
-    });
-  }
-
-  // Hanya ubah record setelah Book Service berhasil.
-  record.status = "returned";
-  record.returnDate = new Date().toISOString();
-
-  res.json({ data: record });
 });
 
 app.listen(PORT, () => {
