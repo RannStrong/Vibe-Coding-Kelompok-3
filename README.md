@@ -2,6 +2,14 @@
 
 Aplikasi katalog buku dan peminjaman dengan frontend HTML/CSS/JavaScript, dua backend microservice Node.js, dan MySQL.
 
+## Anggota Kelompok
+
+- Muhammad Randy Maulana
+- Sofyan Al-Buqori Ramli
+- Hafiz Izzan Zaafarani
+- Exan Nabil Rifai
+- Cikal Fachri Amanta
+
 ## Arsitektur
 
 - **Book Service** pada `http://localhost:3000` mengelola katalog serta status buku di tabel `buku`.
@@ -22,6 +30,7 @@ Frontend
 ```text
 Vibe-Coding-Kelompok-3/
 ├── index.html
+├── package.json
 ├── script.js
 ├── style.css
 ├── uinsi_library.sql
@@ -36,10 +45,12 @@ Vibe-Coding-Kelompok-3/
     ├── book-service/
     │   ├── db.js
     │   ├── server.js
+    │   ├── test-db.js
     │   └── routes/books.js
     └── borrow-service/
         ├── db.js
         ├── server.js
+      ├── test-db.js
         ├── routes/peminjaman.js
         └── script.js
 ```
@@ -68,6 +79,7 @@ npm start
 ```
 
 Book Service tersedia di port `3000`, Borrow Service di port `3001`. Untuk membuka frontend, jalankan Live Server dari root project lalu buka `index.html`.
+Setelah dependency service terpasang, `npm start` dari root project juga meneruskan perintah ke `service/`.
 
 ## Endpoint
 

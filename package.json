@@ -1,0 +1,9 @@
+{
+  "name": "uinsi-library-microservices",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistem perpustakaan berbasis microservices",
+  "scripts": {
+    "start": "npm --prefix service start"
+  }
+}
