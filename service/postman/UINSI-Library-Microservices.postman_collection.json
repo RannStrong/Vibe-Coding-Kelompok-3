@@ -1,0 +1,71 @@
+{
+  "info": {
+    "name": "UINSI Library Microservices",
+    "description": "Jalankan request sesuai urutan. Atur studentId ke mahasiswa terdaftar dan bookId ke buku berstatus tersedia. POST menyimpan recordId untuk request PATCH pengembalian.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "bookBaseUrl", "value": "http://localhost:3000" },
+    { "key": "borrowBaseUrl", "value": "http://localhost:3001" },
+    { "key": "studentId", "value": "S002" },
+    { "key": "bookId", "value": "5" },
+    { "key": "recordId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Book Service - Health",
+      "request": { "method": "GET", "url": "{{bookBaseUrl}}/health" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Book Service sehat dan MySQL terhubung', function () {", "  pm.response.to.have.status(200);", "  pm.expect(pm.response.json().database).to.eql('connected');", "});"] } }]
+    },
+    {
+      "name": "Borrow Service - Health",
+      "request": { "method": "GET", "url": "{{borrowBaseUrl}}/health" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Borrow Service sehat dan MySQL terhubung', function () {", "  pm.response.to.have.status(200);", "  pm.expect(pm.response.json().database).to.eql('connected');", "});"] } }]
+    },
+    {
+      "name": "Book Service - List Books",
+      "request": { "method": "GET", "url": "{{bookBaseUrl}}/books" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Daftar buku berhasil dimuat', function () {", "  pm.response.to.have.status(200);", "  pm.expect(pm.response.json().data).to.be.an('array');", "});"] } }]
+    },
+    {
+      "name": "Borrow Service - List Borrowings",
+      "request": { "method": "GET", "url": "{{borrowBaseUrl}}/peminjaman" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Daftar transaksi berhasil dimuat', function () {", "  pm.response.to.have.status(200);", "  pm.expect(pm.response.json().data).to.be.an('array');", "});"] } }]
+    },
+    {
+      "name": "Borrow Service - Filter by Student",
+      "request": { "method": "GET", "url": "{{borrowBaseUrl}}/peminjaman?studentId={{studentId}}" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Filter mahasiswa berhasil', function () {", "  pm.response.to.have.status(200);", "  pm.expect(pm.response.json().data).to.be.an('array');", "});"] } }]
+    },
+    {
+      "name": "Borrow Service - Create Borrowing",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"studentId\": \"{{studentId}}\",\n  \"bookId\": {{bookId}}\n}", "options": { "raw": { "language": "json" } } },
+        "url": "{{borrowBaseUrl}}/peminjaman"
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Peminjaman tercatat', function () {", "  pm.response.to.have.status(201);", "  const data = pm.response.json().data;", "  pm.expect(data.status).to.eql('active');", "  pm.expect(data.recordId).to.be.a('string');", "  pm.collectionVariables.set('recordId', data.recordId);", "});"] } }]
+    },
+    {
+      "name": "Book Service - Verify Borrowed Status",
+      "request": { "method": "GET", "url": "{{bookBaseUrl}}/books/{{bookId}}" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Borrow Service mengubah status melalui Book Service', function () {", "  pm.response.to.have.status(200);", "  pm.expect(pm.response.json().data.status).to.eql('dipinjam');", "});"] } }]
+    },
+    {
+      "name": "Borrow Service - Return Borrowing",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"studentId\": \"{{studentId}}\"\n}", "options": { "raw": { "language": "json" } } },
+        "url": "{{borrowBaseUrl}}/peminjaman/{{recordId}}/kembalikan"
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Pengembalian berhasil', function () {", "  pm.response.to.have.status(200);", "  pm.expect(pm.response.json().data.status).to.eql('returned');", "});"] } }]
+    },
+    {
+      "name": "Book Service - Verify Returned Status",
+      "request": { "method": "GET", "url": "{{bookBaseUrl}}/books/{{bookId}}" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Buku tersedia kembali', function () {", "  pm.response.to.have.status(200);", "  pm.expect(pm.response.json().data.status).to.eql('tersedia');", "});"] } }]
+    }
+  ]
+}
