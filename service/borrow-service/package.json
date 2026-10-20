@@ -1,14 +1,15 @@
 {
   "name": "borrow-service",
   "version": "1.0.0",
-  "description": "Borrow Service untuk UINSI Library - mengelola data peminjaman & pengembalian buku",
+  "private": true,
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test:db": "node test-db.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^18.0.5",
+    "dotenv": "^18.0.6",
     "express": "^4.19.2",
     "mysql2": "^3.24.5"
   }

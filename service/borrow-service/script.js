@@ -1,17 +1,13 @@
 /* =========================================================
    Student Book Borrowing System
-   Vanilla JS — sekarang mengambil data BUKU dari BOOK SERVICE
-   (bukan localStorage lagi). Login & roster mahasiswa masih
+  Vanilla JS — mengambil data buku dan peminjaman dari microservice.
+  Login & roster mahasiswa masih
    hardcoded sementara (belum ada Student/Auth Service).
-
-   TODO buat Orang 2 / integrasi: begitu Borrow Service jadi,
-   ganti bagian "RECORDS (SEMENTARA localStorage)" di bawah
-   supaya baca/tulis lewat Borrow Service, bukan localStorage.
 
    Sections:
    1. Constants
-   2. LocalStorage helpers (session + records saja, buku sudah bukan localStorage)
-   3. Book Service API helpers (BARU)
+  2. LocalStorage helpers (session only)
+  3. Library API helpers
    4. Init
    5. Date helpers
    6. Identity normalization
@@ -19,18 +15,15 @@
    8. Session
    9. Page / View navigation
    10. Authentication
-   11. Book rendering (sumber data: cachedBooks dari Book Service)
+  11. Book rendering (sumber data: cachedBooks dari Library API)
    12. Borrowing
    13. Bootstrap
    ========================================================= */
 
 /* ---------- 1. Constants ---------- */
 
-// Ganti kalau alamat/port book-service kamu beda
-const BOOK_SERVICE_URL = "http://localhost:3000";
-
-// Ganti kalau alamat/port borrow-service kamu beda
-const BORROW_SERVICE_URL = "http://localhost:3001";
+const BOOK_API_URL = "http://localhost:3000";
+const BORROW_API_URL = "http://localhost:3001";
 
 const STORAGE_KEYS = {
   SESSION: "library_current_session"
@@ -47,10 +40,11 @@ const STUDENT_ID_PATTERN = /^S\d{3}$/;
 const VALID_STUDENTS = [
   { studentId: "S001", name: "Randy" },
   { studentId: "S002", name: "Raihan" },
-  { studentId: "S003", name: "Elsa" }
+  { studentId: "S003", name: "Elsa" },
+  { studentId: "S004", name: "uinsi" }
 ];
 
-/* ---------- 2. LocalStorage helpers (session + records) ---------- */
+/* ---------- 2. LocalStorage helpers (session only) ---------- */
 
 function readStorage(key, fallback) {
   const raw = localStorage.getItem(key);
@@ -80,8 +74,8 @@ function clearSession() {
   localStorage.removeItem(STORAGE_KEYS.SESSION);
 }
 
-/* ---------- 3. Book Service API helpers (BARU) ----------
-   Book Service pakai field Bahasa Indonesia: id, judul, status
+/* ---------- 3. Library API helpers ----------
+  API memakai field Bahasa Indonesia: id, judul, status
    ("tersedia" / "dipinjam"). Kita normalisasi di sini supaya
    sisa kode (yang sebelumnya pakai bookId/title/isBorrowed)
    nggak perlu diubah banyak. */
@@ -97,47 +91,32 @@ function normalizeBook(serviceBook) {
 }
 
 async function refreshBooksCache() {
-  const res = await fetch(`${BOOK_SERVICE_URL}/books`);
+  const res = await fetch(`${BOOK_API_URL}/books`);
   if (!res.ok) throw new Error("Gagal mengambil data buku dari Book Service.");
   const json = await res.json();
   cachedBooks = json.data.map(normalizeBook);
 }
 
-async function pinjamBukuDiService(bookId) {
-  const res = await fetch(`${BOOK_SERVICE_URL}/books/${bookId}/pinjam`, { method: "PATCH" });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.message || "Gagal meminjam buku.");
-  return normalizeBook(json.data);
-}
-
-async function kembalikanBukuDiService(bookId) {
-  const res = await fetch(`${BOOK_SERVICE_URL}/books/${bookId}/kembali`, { method: "PATCH" });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.message || "Gagal mengembalikan buku.");
-  return normalizeBook(json.data);
-}
-
-/* ---------- 3b. Borrow Service API helpers (BARU) ----------
-   Menggantikan getRecords()/saveRecords() (localStorage) sesuai TODO
-   di atas. cachedRecords hanya berisi record milik mahasiswa yang
+/* ---------- 3b. Borrowing API helpers ----------
+  cachedRecords hanya berisi record milik mahasiswa yang
    sedang login (diambil lewat ?studentId=). */
 
 let cachedRecords = []; // [{ recordId, studentId, bookId, title, borrowDate, dueDate, status }]
 
 async function refreshMyRecordsCache(studentId) {
   const res = await fetch(
-    `${BORROW_SERVICE_URL}/peminjaman?studentId=${encodeURIComponent(studentId)}`
+    `${BORROW_API_URL}/peminjaman?studentId=${encodeURIComponent(studentId)}`
   );
   if (!res.ok) throw new Error("Gagal mengambil data peminjaman dari Borrow Service.");
   const json = await res.json();
   cachedRecords = json.data;
 }
 
-async function buatPeminjamanDiService(studentId, bookId, title) {
-  const res = await fetch(`${BORROW_SERVICE_URL}/peminjaman`, {
+async function buatPeminjamanDiService(studentId, bookId) {
+  const res = await fetch(`${BORROW_API_URL}/peminjaman`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ studentId, bookId, title })
+    body: JSON.stringify({ studentId, bookId })
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.message || "Gagal mencatat peminjaman.");
@@ -145,7 +124,7 @@ async function buatPeminjamanDiService(studentId, bookId, title) {
 }
 
 async function kembalikanPeminjamanDiService(recordId, studentId) {
-  const res = await fetch(`${BORROW_SERVICE_URL}/peminjaman/${recordId}/kembalikan`, {
+  const res = await fetch(`${BORROW_API_URL}/peminjaman/${recordId}/kembalikan`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ studentId })
@@ -158,8 +137,7 @@ async function kembalikanPeminjamanDiService(recordId, studentId) {
 /* ---------- 4. Init ---------- */
 
 function initializeData() {
-  // Buku sekarang sumbernya Book Service, dan records sumbernya
-  // Borrow Service - tidak ada lagi yang perlu di-seed di localStorage.
+  // Books and borrow records are managed by the API.
 }
 
 /* ---------- 5. Date helpers ---------- */
@@ -357,7 +335,7 @@ function hideLoginError() {
   loginError.hidden = true;
 }
 
-/* ---------- 11. Book rendering (dari cachedBooks, hasil Book Service) ---------- */
+/* ---------- 11. Book rendering (dari cachedBooks, hasil Library API) ---------- */
 
 function renderBooksTable() {
   const session = getValidSession();
@@ -446,10 +424,6 @@ function renderSummary() {
 }
 
 /* ---------- 12. Borrowing ---------- */
-/* Records (siapa pinjam apa) masih di localStorage SEMENTARA,
-   karena Borrow Service belum jadi. Status tersedia/dipinjam buku
-   itu sendiri sudah 100% dari Book Service (bukan localStorage). */
-
 function countActiveBorrowsForStudent(studentId) {
   const normalizedId = normalizeStudentId(studentId);
   return cachedRecords.filter(
@@ -531,19 +505,10 @@ async function handleBorrow(bookId) {
   }
 
   try {
-    // 1. Tandai buku sebagai dipinjam di Book Service.
-    const updatedBook = await pinjamBukuDiService(bookId);
-
-    // 2. Catat transaksi peminjaman di Borrow Service. Borrow Service
-    //    juga menegakkan ulang aturan max 3 buku aktif di sisi server.
-    const record = await buatPeminjamanDiService(
-      session.studentId,
-      updatedBook.bookId,
-      updatedBook.title
-    );
+    const record = await buatPeminjamanDiService(session.studentId, bookId);
 
     showActionMessage(
-      `"${updatedBook.title}" borrowed successfully. Due ${formatDate(record.dueDate)}.`,
+      `"${book.title}" borrowed successfully. Due ${formatDate(record.dueDate)}.`,
       "success"
     );
 
@@ -578,14 +543,9 @@ async function handleReturn(recordId) {
   }
 
   try {
-    // 1. Catat pengembalian di Borrow Service dulu (Borrow Service
-    //    yang menegakkan ulang cek kepemilikan di sisi server).
     await kembalikanPeminjamanDiService(record.recordId, session.studentId);
-
-    // 2. Baru tandai buku tersedia lagi di Book Service.
-    const updatedBook = await kembalikanBukuDiService(record.bookId);
-
-    showActionMessage(`"${updatedBook.title}" returned successfully.`, "success");
+    const book = cachedBooks.find((item) => item.bookId === record.bookId);
+    showActionMessage(`"${book ? book.title : record.title}" returned successfully.`, "success");
 
     await refreshBooksCache();
     await refreshMyRecordsCache(session.studentId);

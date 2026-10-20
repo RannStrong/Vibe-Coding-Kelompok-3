@@ -1,11 +1,13 @@
+
 {
-    "name": "uinsi-library-microservices",
-    "version": "1.0.0",
-    "description": "Sistem perpustakaan berbasis microservices",
-    "scripts": {
-        "start": "concurrently \"npm --prefix book-service start\" \"npm --prefix borrow-service start\" \"npm --prefix login-service start\""
-    },
-    "devDependencies": {
-        "concurrently": "^10.0.5"
-    }
+  "name": "uinsi-library-microservices",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistem perpustakaan berbasis microservices",
+  "scripts": {
+    "start": "npm --prefix service start"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
 }

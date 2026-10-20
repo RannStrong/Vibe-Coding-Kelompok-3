@@ -1,0 +1,20 @@
+{
+  "name": "uinsi-library-microservices",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Book and borrowing microservices for UINSI Library",
+  "workspaces": [
+  "book-service",
+  "borrow-service",
+  "login-service"
+],
+"scripts": {
+  "start": "concurrently --kill-others --names book,borrow,login \"npm run start --workspace=book-service\" \"npm run start --workspace=borrow-service\" \"npm run start --workspace=login-service\""
+},
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "overrides": {
+    "shell-quote": "^1.11.0"
+  }
+}
