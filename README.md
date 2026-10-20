@@ -1,6 +1,8 @@
-# UINSI Library
+# Vibe Coding Kelompok 3 — UINSI Library
 
-Aplikasi katalog buku dan peminjaman dengan frontend HTML/CSS/JavaScript, dua backend microservice Node.js, dan MySQL.
+# Sistem Peminjaman Buku
+
+Sistem peminjaman buku kelompok 3.
 
 ## Anggota Kelompok
 
@@ -10,127 +12,495 @@ Aplikasi katalog buku dan peminjaman dengan frontend HTML/CSS/JavaScript, dua ba
 - Exan Nabil Rifai
 - Cikal Fachri Amanta
 
-## Arsitektur
+---
 
-- **Book Service** pada `http://localhost:3000` mengelola katalog serta status buku di tabel `buku`.
-- **Borrow Service** pada `http://localhost:3001` mengelola transaksi pinjam-kembali di tabel `peminjaman` dan validasi mahasiswa di tabel `mahasiswa`.
-- Saat meminjam atau mengembalikan buku, Borrow Service memanggil endpoint Book Service melalui HTTP untuk membaca ketersediaan dan mengubah status buku. Borrow Service tidak mengubah status buku langsung di database.
-- Kedua service memakai MySQL `uinsi_library`. Tidak ada file JSON atau array in-memory sebagai penyimpanan utama.
+## Deskripsi
+
+UINSI Library adalah aplikasi perpustakaan sederhana yang dikembangkan dari project perpustakaan sebelumnya menjadi arsitektur berbasis microservice.
+
+Project menggunakan frontend HTML, CSS, dan JavaScript serta tiga service:
+
+- Login Service
+- Book Service
+- Borrow Service
+
+Komunikasi antar-service dilakukan menggunakan HTTP API.
+
+---
+
+## Architecture
+
+### Sebelum Dikembangkan
+
+Pada versi awal, aplikasi menggunakan HTML, CSS, JavaScript, dan `localStorage` untuk menyimpan data peminjaman pada browser.
 
 ```text
+User
+  |
+  v
 Frontend
-  |-- GET buku / status --------------------> Book Service :3000 --> MySQL
-  `-- pinjam / kembali / daftar transaksi --> Borrow Service :3001 --> MySQL
-                                                    |
-                                                    `-- HTTP /books/:id/borrow|return --> Book Service :3000
+  |
+  v
+localStorage
+Setelah Dikembangkan
+
+Project dikembangkan menjadi tiga service:
+
+Login Service
+Book Service
+Borrow Service
+
+Frontend berfungsi sebagai client yang berkomunikasi dengan service melalui HTTP API.
+
+                    +----------------+
+                    |    Frontend    |
+                    |  HTML/CSS/JS   |
+                    +-------+--------+
+                            |
+             +--------------+--------------+
+             |              |              |
+             v              v              v
+     +---------------+ +---------------+ +----------------+
+     | Login Service | | Book Service  | | Borrow Service |
+     | Port 3002     | | Port 3000     | | Port 3001      |
+     +---------------+ +-------+-------+ +-------+--------+
+                                  ^                |
+                                  |                |
+                                  +----------------+
+                                   HTTP API
+                                      |
+                                      v
+                               +-------------+
+                               |    MySQL    |
+                               |uinsi_library|
+                               +-------------+
 ```
 
-## Struktur
+Dokumentasi architecture lengkap dapat dilihat pada:
 
-```text
+[Architecture Documentation](docs/architecture.md)
+
+Microservice
+## 1.Login Service
+
+Login Service bertanggung jawab terhadap proses login mahasiswa.
+
+Fungsi utama:
+
+Memvalidasi Student ID
+Memvalidasi Name
+Mengembalikan data pengguna jika login berhasil
+```
+Port:
+
+3002
+
+Base URL:
+
+http://localhost:3002
+Endpoint Login Service
+Method	Endpoint	Fungsi
+POST	/login	Memvalidasi Student ID dan Name
+
+Contoh request:
+
+{
+  "studentId": "S001",
+  "name": "Randy"
+}
+
+Login Service tidak menggunakan API Key.
+```
+## 2.Book Service
+
+Book Service bertanggung jawab terhadap data dan status buku.
+
+Fungsi utama:
+
+Menampilkan seluruh buku
+Menampilkan buku yang tersedia
+Menampilkan detail buku
+Menambahkan buku
+Menghapus buku
+Mengubah status buku menjadi dipinjam
+Mengubah status buku menjadi tersedia
+```
+Port:
+
+3000
+
+Base URL:
+
+http://localhost:3000
+
+Request ke Book Service menggunakan API Key:
+
+X-API-Key: 12345678
+Endpoint Book Service
+Method	Endpoint	Fungsi
+GET	/books	Mendapatkan seluruh data buku
+GET	/books/available	Mendapatkan buku yang tersedia
+GET	/books/:id	Mendapatkan detail buku
+POST	/books	Menambahkan buku
+DELETE	/books/:id	Menghapus buku
+PATCH	/books/:id/pinjam	Mengubah status buku menjadi dipinjam
+PATCH	/books/:id/kembali	Mengubah status buku menjadi tersedia
+
+Data buku disimpan dalam database MySQL pada tabel:
+
+books
+```
+## 3.Borrow Service
+
+Borrow Service bertanggung jawab terhadap proses peminjaman dan pengembalian.
+
+Fungsi utama:
+
+Membuat data peminjaman
+Menampilkan data peminjaman
+Memproses pengembalian buku
+Menerapkan batas maksimal 3 buku aktif
+Memvalidasi mahasiswa yang melakukan pengembalian
+Berkomunikasi dengan Book Service melalui HTTP API
+```
+Port:
+
+3001
+
+Base URL:
+
+http://localhost:3001
+
+Request ke Borrow Service menggunakan API Key:
+
+X-API-Key: 12345678
+Endpoint Borrow Service
+Method	Endpoint	Fungsi
+GET	/peminjaman	Mendapatkan data peminjaman
+GET	/peminjaman?studentId=S001	Mendapatkan data peminjaman mahasiswa tertentu
+POST	/peminjaman	Membuat peminjaman
+PATCH	/peminjaman/:recordId/kembalikan	Mengembalikan buku
+Alur Komunikasi Antar-Service
+Peminjaman
+Frontend
+   |
+   | POST /peminjaman
+   v
+Borrow Service
+   |
+   | GET /books/:id
+   v
+Book Service
+   |
+   | Data buku + status
+   v
+Borrow Service
+   |
+   | Validasi peminjaman
+   |
+   | Simpan transaksi ke MySQL
+   |
+   | PATCH /books/:id/pinjam
+   v
+Book Service
+   |
+   | Status buku = dipinjam
+   v
+Borrow Service
+   |
+   v
+Frontend
+Pengembalian
+Frontend
+   |
+   | PATCH /peminjaman/:recordId/kembalikan
+   v
+Borrow Service
+   |
+   | PATCH /books/:id/kembali
+   v
+Book Service
+   |
+   | Status buku = tersedia
+   v
+Borrow Service
+   |
+   | Status record = returned
+   v
+Frontend
+```
+Borrow Service tidak membaca tabel books secara langsung. Informasi dan perubahan status buku dilakukan melalui API Book Service.
+
+Technology
+
+Technology yang digunakan:
+
+HTML
+CSS
+JavaScript
+Node.js
+Express.js
+MySQL
+phpMyAdmin
+HTTP API
+Fetch API
+Live Server
+Postman
+
+Data utama disimpan menggunakan database MySQL.
+```
+Struktur Project
 Vibe-Coding-Kelompok-3/
+│
 ├── index.html
-├── package.json
 ├── script.js
 ├── style.css
-├── uinsi_library.sql
-├── docs/
-│   ├── architecture.md
-│   └── testing.md
-└── service/
-    ├── .env.example
-    ├── package.json
-    ├── package-lock.json
-    ├── postman/UINSI-Library-Microservices.postman_collection.json
-    ├── book-service/
-    │   ├── db.js
-    │   ├── server.js
-    │   ├── test-db.js
-    │   └── routes/books.js
-    └── borrow-service/
-        ├── db.js
-        ├── server.js
-      ├── test-db.js
-        ├── routes/peminjaman.js
-        └── script.js
+├── README.md
+├── package.json
+├── package-lock.json
+│
+├── book-service/
+│   ├── .env
+│   ├── db.js
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── server.js
+│   └── test-db.js
+│
+├── borrow-service/
+│   ├── .env
+│   ├── db.js
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── server.js
+│   └── test-db.js
+│
+├── login-service/
+│   ├── db.js
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── server.js
+│   └── test-db.js
+│
+└── docs/
+    ├── testing.md
+    ├── bug-report.md
+    ├── ai-coding.md
+    ├── architecture.md
+    └── sharing-session.md
 ```
+Cara Menjalankan Project
 
-`service/borrow-service/script.js` tetap menjadi client frontend yang digunakan oleh `index.html`; backend Borrow Service berada di `server.js` dan `routes/peminjaman.js`.
+Project terdiri dari frontend dan tiga service.
 
-## Database
+1. Menjalankan Semua Service
 
-Import `uinsi_library.sql` ke MySQL jika database belum tersedia. Buat `service/.env` dari `service/.env.example` bila konfigurasi lokal berbeda:
+Pastikan MySQL/XAMPP sudah berjalan.
 
-```env
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=uinsi_library
-DB_USERNAME=root
-DB_PASSWORD=
-```
+Buka terminal pada folder utama project:
 
-## Menjalankan
-
-Dari folder `service/`, jalankan kedua service sekaligus:
-
-```powershell
 npm install
 npm start
+
+Jika PowerShell menolak perintah npm karena execution policy, gunakan:
+
+npm.cmd install
+npm.cmd start
 ```
+Ketiga service akan berjalan:
 
-Book Service tersedia di port `3000`, Borrow Service di port `3001`. Untuk membuka frontend, jalankan Live Server dari root project lalu buka `index.html`.
-Setelah dependency service terpasang, `npm start` dari root project juga meneruskan perintah ke `service/`.
+Book Service   -> http://localhost:3000
+Borrow Service -> http://localhost:3001
+Login Service  -> http://localhost:3002
+```
+2. Menjalankan Frontend
 
-## Endpoint
+Buka project menggunakan VS Code.
 
-Book Service (`http://localhost:3000`):
+Klik kanan:
 
-| Method | Path | Fungsi |
-|---|---|---|
-| GET | `/health` | Status service dan koneksi MySQL |
-| GET | `/books` | Daftar semua buku |
-| GET | `/books/:id` | Detail buku |
-| PATCH | `/books/:id/borrow` | Tandai buku dipinjam; dipanggil Borrow Service |
-| PATCH | `/books/:id/return` | Tandai buku tersedia; dipanggil Borrow Service |
-| GET | `/books/available` | Daftar buku tersedia |
-| POST | `/books` | Tambah buku |
-| DELETE | `/books/:id` | Hapus buku yang tidak dipinjam dan belum punya riwayat |
+index.html
 
-Borrow Service (`http://localhost:3001`):
+kemudian pilih:
 
-| Method | Path | Fungsi |
-|---|---|---|
-| GET | `/health` | Status service dan koneksi MySQL |
-| GET | `/peminjaman` | Semua transaksi |
-| GET | `/peminjaman?studentId=S001` | Transaksi mahasiswa tertentu |
-| POST | `/peminjaman` | Buat transaksi dan minta Book Service mengubah status buku |
-| PATCH | `/peminjaman/:id/kembalikan` | Kembalikan transaksi aktif; `:id` menerima `recordId` atau ID numerik |
+Open with Live Server
 
-## Postman
+Frontend biasanya dibuka melalui:
+```
+http://127.0.0.1:5500/
+Catatan Windows PowerShell
 
-Import collection `service/postman/UINSI-Library-Microservices.postman_collection.json`. Jalankan request berurutan. Atur `studentId` ke mahasiswa terdaftar dan `bookId` ke buku dengan status `tersedia` (collection memakai ID `5`).
+Jika PowerShell menolak perintah npm karena execution policy, gunakan:
 
-1. `GET http://localhost:3000/health`
-2. `GET http://localhost:3001/health`
-3. `GET http://localhost:3000/books`
-4. `GET http://localhost:3001/peminjaman`
-5. `POST http://localhost:3001/peminjaman` dengan body JSON:
+npm.cmd install
+npm.cmd start
+Contoh Alur Peminjaman
 
-```json
+Frontend mengirim:
+
 {
   "studentId": "S001",
   "bookId": 1
 }
+
+Borrow Service kemudian:
+
+Memeriksa data buku melalui Book Service.
+Memeriksa status ketersediaan buku.
+Memeriksa batas maksimal 3 buku aktif.
+Membuat record peminjaman.
+Menyimpan data peminjaman ke MySQL.
+Meminta Book Service mengubah status buku menjadi dipinjam.
+Mengembalikan hasil peminjaman ke frontend.
+Testing
+
+Testing dilakukan terhadap:
+
+Login Service
+Book Service
+Borrow Service
+Frontend
+Komunikasi antar-service
+Peminjaman buku
+Pengembalian buku
+Database MySQL
+API Key
+Hasil Pengujian yang Telah Dilakukan
+Login Service berhasil dijalankan pada port 3002.
+Book Service berhasil dijalankan pada port 3000.
+Borrow Service berhasil dijalankan pada port 3001.
+Database MySQL berhasil terhubung.
+Data buku berhasil diakses melalui API.
+Penambahan buku berhasil dilakukan melalui API.
+Status buku berhasil diubah menjadi dipinjam.
+Status buku berhasil diubah menjadi tersedia.
+Peminjaman buku berhasil dibuat.
+Data peminjaman tersimpan dengan status active.
+Pengembalian berhasil dilakukan.
+Record peminjaman berubah menjadi returned.
+Setelah perbaikan bug, status buku kembali menjadi tersedia.
+Frontend berhasil mengambil data dari Book Service.
+Frontend berhasil melakukan peminjaman dan pengembalian melalui Borrow Service.
 ```
+Dokumentasi lengkap:
 
-Simpan `data.recordId` dari respons. Periksa bahwa `GET http://localhost:3000/books/1` sekarang menunjukkan `status: "dipinjam"`; ini membuktikan Borrow Service memanggil Book Service melalui HTTP.
+Testing Documentation
 
-6. `PATCH http://localhost:3001/peminjaman/{{recordId}}/kembalikan` dengan body:
+Bug dan Perbaikan
 
-```json
-{
-  "studentId": "S001"
-}
-```
+Saat pengujian ditemukan beberapa masalah.
 
-Pastikan status transaksi menjadi `returned` dan status buku kembali `tersedia`. Contoh pengujian aturan bisnis lainnya ada di [docs/testing.md](docs/testing.md).
+Bug Status Buku Saat Pengembalian
+
+Sebelum diperbaiki:
+
+Record peminjaman berubah menjadi returned.
+Status buku pada Book Service masih dipinjam.
+
+Hal tersebut menyebabkan data Borrow Service dan Book Service tidak sinkron.
+
+Perbaikan dilakukan dengan membuat Borrow Service memanggil:
+
+PATCH /books/:id/kembali
+
+ke Book Service sebelum record peminjaman diubah menjadi returned.
+
+Setelah retest:
+
+Record menjadi returned.
+Status buku menjadi tersedia.
+
+Dokumentasi bug:
+
+Bug Report
+
+AI Coding Tool
+
+AI Coding Tool digunakan untuk membantu:
+
+Pengembangan Book Service
+Pengembangan Borrow Service
+Pengembangan Login Service
+Pengembangan dan penyesuaian frontend
+Integrasi API
+Debugging
+Dokumentasi
+
+AI Coding Tool yang digunakan:
+
+ChatGPT
+Claude
+
+Kode hasil AI tidak langsung digunakan tanpa pemeriksaan. Kode diperiksa, dijalankan, diuji, dan diperbaiki apabila ditemukan kesalahan.
+
+Dokumentasi AI:
+
+AI Coding Documentation
+
+Masalah yang Ditemukan dari Hasil AI
+
+Beberapa masalah yang ditemukan selama proses pengembangan:
+
+Path books.json sempat tidak sesuai dengan struktur folder sehingga menyebabkan error ENOENT.
+Versi awal JavaScript menggunakan class CSS yang tidak sesuai dengan CSS project asli.
+Frontend masih memiliki SEED_BOOKS sehingga menampilkan data buku lama dan tidak sama dengan data pada Book Service.
+Status buku tidak sinkron dengan status peminjaman saat proses pengembalian.
+Frontend sempat mengalami Failed to fetch karena header X-API-Key belum diizinkan oleh CORS.
+Login sempat mengalami Failed to fetch karena Login Service belum dijalankan.
+
+Setiap masalah diperiksa dan diperbaiki berdasarkan hasil pengujian.
+
+Pembagian Tugas Kelompok
+Orang 1 — Book Service
+
+Data dan API buku.
+
+Orang 2 — Borrow Service
+
+Peminjaman dan pengembalian.
+
+Orang 3 — Frontend
+
+Tampilan dan JavaScript frontend.
+
+Orang 4 — Integrasi
+
+Menghubungkan Login Service, Book Service, Borrow Service, dan Frontend.
+
+Orang 5 — Testing + Dokumentasi
+
+Testing aplikasi, dokumentasi, README, dokumentasi AI Coding Tool, dan membantu memperbaiki bug yang ditemukan saat testing.
+
+Dokumentasi
+
+Dokumentasi project:
+
+Architecture
+Testing
+Bug Report
+AI Coding Tool
+Sharing Session
+Sharing Session
+
+Materi sharing session mencakup:
+
+Architecture sebelum dan sesudah dikembangkan.
+Microservice yang dibuat.
+Technology yang digunakan.
+AI Coding Tool yang digunakan.
+Bagaimana AI membantu proses pengembangan.
+Masalah dan kesalahan yang ditemukan dari hasil AI.
+
+Materi lengkap:
+
+Sharing Session Documentation
+
+Kesimpulan
+
+Project perpustakaan yang awalnya menggunakan frontend dan localStorage dikembangkan menjadi arsitektur microservice.
+
+Login Service bertanggung jawab terhadap proses login, Book Service bertanggung jawab terhadap data dan status buku, sedangkan Borrow Service bertanggung jawab terhadap transaksi peminjaman dan pengembalian.
+
+Ketiga service berkomunikasi menggunakan HTTP API dan data utama disimpan menggunakan MySQL.
+
+AI Coding Tool digunakan untuk membantu pengembangan, tetapi hasil kode tetap diperiksa dan diuji kembali. Proses testing juga digunakan untuk menemukan dan memperbaiki bug sebelum project digunakan sebagai hasil akhir.
