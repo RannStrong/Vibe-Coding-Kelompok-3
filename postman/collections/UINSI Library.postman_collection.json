@@ -1,0 +1,373 @@
+{
+  "info": {
+    "_postman_id": "80da93c7-8169-41ea-b0c2-c626b165d318",
+    "name": "UINSI Library",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "58483030",
+    "_collection_link": "https://go.postman.co/collection/58483030-80da93c7-8169-41ea-b0c2-c626b165d318?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Login",
+      "item": [
+        {
+          "name": "login service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"studentId\": \"S001\",\r\n    \"name\": \"Randy\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:3002/login",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3002",
+              "path": [
+                "login"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Book-service",
+      "item": [
+        {
+          "name": "Semua buku",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "12345678"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3000/books",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "books"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "buku tersedia",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "12345678"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3000/books/available",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "books",
+                "available"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Detail Buku",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "12345678"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3000/books/5",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "books",
+                "5"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Tambah Buku",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "12345678"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"judul\": \"Dilan 1990\",\r\n    \"penulis\": \"Pidi Baiq\",\r\n    \"tahun\": 2014\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:3000/books",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "books"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Ganti Status Pinjam",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "12345678"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3000/books/8/pinjam",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "books",
+                "8",
+                "pinjam"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Ganti Status Kembali",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "12345678"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3000/books/8/kembali",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "books",
+                "8",
+                "kembali"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Hapus Buku",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "12345678"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3000/books/8",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "books",
+                "8"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Borrow-service",
+      "item": [
+        {
+          "name": "Riwayat peminjaman",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "12345678"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/peminjaman",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3001",
+              "path": [
+                "peminjaman"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Peminjaman User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "12345678"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3001/peminjaman?studentId=S001",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3001",
+              "path": [
+                "peminjaman"
+              ],
+              "query": [
+                {
+                  "key": "studentId",
+                  "value": "S001"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Meminjam buku",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "12345678"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"studentId\": \"S001\",\r\n    \"bookId\": 1\r\n}\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:3001/peminjaman",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3001",
+              "path": [
+                "peminjaman"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Mengembalikan buku",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "12345678"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"studentId\": \"S001\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:3001/peminjaman/R1791353579104/kembalikan",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3001",
+              "path": [
+                "peminjaman",
+                "R1791353579104",
+                "kembalikan"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

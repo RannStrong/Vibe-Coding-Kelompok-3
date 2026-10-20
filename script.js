@@ -1,684 +1,1371 @@
 /* =========================================================
-   Student Book Borrowing System - Prototype
-   Vanilla JS + localStorage only. No backend, no framework.
+   UINSI LIBRARY
+   FRONTEND
+   =========================================================
 
-   Sections in this file:
-   1. Constants
-   2. LocalStorage helpers
-   3. Seed data / initialization
-   4. Date helpers
-   5. Identity normalization
-   6. DOM references
-   7. Session
-   8. Page / View navigation
-   9. Authentication
-   10. Book rendering
-   11. Borrowing
-   12. Bootstrap
+   Login Service  : http://localhost:3002
+   Book Service   : http://localhost:3000
+   Borrow Service : http://localhost:3001
+
+   Database:
+   MySQL
+
+   Frontend tidak lagi menyimpan data buku/peminjaman
+   menggunakan localStorage.
+
    ========================================================= */
 
-/* ---------- 1. Constants ---------- */
 
-const STORAGE_KEYS = {
-  BOOKS: "library_books",
-  STUDENTS: "library_students",
-  RECORDS: "library_borrow_records",
-  SESSION: "library_current_session",
-  // Not one of the 4 "application data" keys, but a small marker used
-  // only to run the one-time presentation reset below exactly once.
-  VERSION: "library_data_version"
-};
+/* =========================================================
+   1. CONFIGURATION
+   ========================================================= */
 
-// Bumping this string triggers the one-time presentation reset in
-// initializeData() below (clears old borrow history + un-borrows all
-// books) the next time the app loads. It only fires once per value -
-// it does NOT wipe data on every refresh, so a live demo's borrow /
-// return actions survive a page refresh.
-const DATA_VERSION = "presentation-v1";
+const LOGIN_SERVICE_URL = "http://localhost:3002";
+const BOOK_SERVICE_URL = "http://localhost:3000";
+const BORROW_SERVICE_URL = "http://localhost:3001";
+
+const API_KEY = "12345678";
 
 const MAX_ACTIVE_BORROWS = 3;
-const BORROW_PERIOD_DAYS = 7;
 
-// User ID format: uppercase "S" followed by exactly 3 digits (e.g. S001, S025, S999).
-const STUDENT_ID_PATTERN = /^S\d{3}$/;
 
-const SEED_BOOKS = [
-  { bookId: "B001", title: "Introduction to Algorithms", isBorrowed: false },
-  { bookId: "B002", title: "Clean Code", isBorrowed: false },
-  { bookId: "B003", title: "Database System Concepts", isBorrowed: false },
-  { bookId: "B004", title: "Computer Networking", isBorrowed: false },
-  { bookId: "B005", title: "Operating System Concepts", isBorrowed: false },
-  { bookId: "B006", title: "Software Engineering", isBorrowed: false }
-];
+/* =========================================================
+   2. SESSION STORAGE
+   ========================================================= */
 
-// The authoritative roster of students allowed to log in - for this
-// presentation build, exactly these 3 accounts. Login is only
-// permitted for a studentId that exists in this list - no new student
-// is ever created at login time, and no other id/name pair works.
-const VALID_STUDENTS = [
-  { studentId: "S001", name: "Randy" },
-  { studentId: "S002", name: "Raihan" },
-  { studentId: "S003", name: "Elsa" },
-  { studentId: "S004", name: "uinsi" }
-];
+const SESSION_KEY = "library_current_session";
 
-/* ---------- 2. LocalStorage helpers ---------- */
-
-function readStorage(key, fallback) {
-  const raw = localStorage.getItem(key);
-  if (raw === null) return fallback;
-  try {
-    return JSON.parse(raw);
-  } catch (e) {
-    return fallback;
-  }
-}
-
-function writeStorage(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
-function getBooks() {
-  const data = readStorage(STORAGE_KEYS.BOOKS, []);
-  // Guard against corrupt/malformed data (valid JSON but wrong shape,
-  // e.g. an object or string instead of an array) - never let a bad
-  // shape propagate into .filter()/.find() calls elsewhere and crash.
-  return Array.isArray(data) ? data : [];
-}
-function saveBooks(books) {
-  writeStorage(STORAGE_KEYS.BOOKS, books);
-}
-
-function getStudents() {
-  const data = readStorage(STORAGE_KEYS.STUDENTS, []);
-  return Array.isArray(data) ? data : [];
-}
-function saveStudents(students) {
-  writeStorage(STORAGE_KEYS.STUDENTS, students);
-}
-
-function getRecords() {
-  const data = readStorage(STORAGE_KEYS.RECORDS, []);
-  return Array.isArray(data) ? data : [];
-}
-function saveRecords(records) {
-  writeStorage(STORAGE_KEYS.RECORDS, records);
-}
 
 function getSession() {
-  const data = readStorage(STORAGE_KEYS.SESSION, null);
-  // A valid session must be a plain object, not an array/string/number.
-  if (!data || typeof data !== "object" || Array.isArray(data)) {
-    return null;
-  }
-  return data;
+    const raw = localStorage.getItem(SESSION_KEY);
+
+    if (!raw) {
+        return null;
+    }
+
+    try {
+        const session = JSON.parse(raw);
+
+        if (
+            !session ||
+            typeof session !== "object" ||
+            !session.studentId ||
+            !session.name
+        ) {
+            return null;
+        }
+
+        return session;
+
+    } catch (error) {
+        console.error("Session tidak valid:", error);
+        return null;
+    }
 }
+
+
 function saveSession(session) {
-  writeStorage(STORAGE_KEYS.SESSION, session);
+    localStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify(session)
+    );
 }
+
+
 function clearSession() {
-  localStorage.removeItem(STORAGE_KEYS.SESSION);
+    localStorage.removeItem(SESSION_KEY);
 }
 
-/* ---------- 7b. Roster lookup helpers ----------
-   VALID_STUDENTS (a hardcoded constant, not localStorage) is the single
-   authoritative source of truth for "who is allowed to log in". This
-   guarantees that stale/legacy student records left over in
-   localStorage from a previous version of the app can never grant
-   login access, no matter what ends up stored under library_students. */
 
-function findValidStudentById(rawId) {
-  const normalizedId = normalizeStudentId(rawId);
-  return VALID_STUDENTS.find((s) => s.studentId === normalizedId) || null;
+/* =========================================================
+   3. HELPER
+   ========================================================= */
+
+function normalizeStudentId(studentId) {
+    return String(studentId)
+        .trim()
+        .toUpperCase();
 }
 
-/* Validates the current session against VALID_STUDENTS. Returns a
-   clean { studentId, name } object (taken from the roster itself, not
-   from whatever was stored) if - and only if - the session is
-   well-formed, its studentId exists on the roster, and its name
-   matches that student's registered name. Any other case (missing
-   session, malformed JSON, unknown studentId, mismatched name) clears
-   the bad session and returns null. */
-function getValidSession() {
-  const session = getSession();
 
-  if (!session) {
-    // Either nothing was stored, or it was corrupt/malformed JSON that
-    // readStorage() already caught, or it parsed into something that
-    // isn't a plain object. Nothing to clear beyond what getSession()
-    // already guards against, but clear defensively in case a
-    // malformed-but-non-null value slipped through.
-    clearSession();
-    return null;
-  }
-
-  if (typeof session.studentId !== "string" || typeof session.name !== "string") {
-    clearSession();
-    return null;
-  }
-
-  const validStudent = findValidStudentById(session.studentId);
-  if (!validStudent) {
-    clearSession();
-    return null;
-  }
-
-  if (session.name.trim().toLowerCase() !== validStudent.name.toLowerCase()) {
-    clearSession();
-    return null;
-  }
-
-  return { studentId: validStudent.studentId, name: validStudent.name };
+function isValidStudentIdFormat(studentId) {
+    return /^S\d{3}$/.test(studentId);
 }
 
-/* ---------- 3. Seed data / initialization ---------- */
 
-function initializeData() {
-  // Seed the book catalog only once (first run ever, or after
-  // localStorage is cleared). The catalog itself (titles, ids) is
-  // never wiped - only borrow status is touched, and only by the
-  // one-time reset below.
-  if (localStorage.getItem(STORAGE_KEYS.BOOKS) === null) {
-    saveBooks(SEED_BOOKS);
-  }
+function formatDate(dateString) {
 
-  // Always overwrite library_students with VALID_STUDENTS (not just on
-  // first run). VALID_STUDENTS is the authoritative roster; this keeps
-  // localStorage in sync with it and purges any stale/legacy students
-  // (e.g. an old "S999") left over from a previous version of the app
-  // so they can never be mistaken for a valid, registered student.
-  saveStudents(VALID_STUDENTS);
+    if (!dateString) {
+        return "-";
+    }
 
-  // One-time presentation reset, gated by DATA_VERSION. This block only
-  // runs the first time this exact DATA_VERSION is seen in this browser
-  // (e.g. right after deploying this build). It clears stale borrow
-  // history from older versions and makes sure no book is stuck
-  // "Borrowed" because of that old history. On every later
-  // load/refresh - including ones that happen *during* the demo, after
-  // Randy has borrowed a book - storedVersion already matches
-  // DATA_VERSION, so this block is skipped and nothing gets wiped.
-  const storedVersion = localStorage.getItem(STORAGE_KEYS.VERSION);
-  if (storedVersion !== DATA_VERSION) {
-    // Clear all old borrow history.
-    saveRecords([]);
+    const date = new Date(dateString);
 
-    // Un-borrow every book so nothing is stuck "Borrowed" from history
-    // that no longer exists. The catalog itself (titles/ids) is kept.
-    const books = getBooks().map((book) => ({ ...book, isBorrowed: false }));
-    saveBooks(books);
+    if (Number.isNaN(date.getTime())) {
+        return "-";
+    }
 
-    localStorage.setItem(STORAGE_KEYS.VERSION, DATA_VERSION);
-  } else if (localStorage.getItem(STORAGE_KEYS.RECORDS) === null) {
-    // Same version already initialized before, but the records key is
-    // missing entirely (e.g. manually deleted) - make sure it exists
-    // as an empty list rather than leaving it undefined.
-    saveRecords([]);
-  }
+    return date.toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "short",
+        year: "numeric"
+    });
 }
 
-/* ---------- 4. Date helpers ---------- */
 
-function todayISO() {
-  return new Date().toISOString();
+/* =========================================================
+   4. API HELPER
+   ========================================================= */
+
+async function apiRequest(
+    url,
+    options = {},
+    useApiKey = true
+) {
+
+    const headers = {
+        ...(options.headers || {})
+    };
+
+
+    if (useApiKey) {
+        headers["X-API-Key"] = API_KEY;
+    }
+
+
+    if (
+        options.body &&
+        !headers["Content-Type"]
+    ) {
+        headers["Content-Type"] =
+            "application/json";
+    }
+
+
+    const response = await fetch(
+        url,
+        {
+            ...options,
+            headers
+        }
+    );
+
+
+    let data;
+
+    try {
+        data = await response.json();
+    } catch (error) {
+        data = {};
+    }
+
+
+    if (!response.ok) {
+
+        const message =
+            data.message ||
+            `Request gagal (${response.status})`;
+
+        throw new Error(message);
+    }
+
+
+    return data;
 }
 
-function addDays(isoDateString, days) {
-  const date = new Date(isoDateString);
-  date.setDate(date.getDate() + days);
-  return date.toISOString();
+
+/* =========================================================
+   5. DOM REFERENCES
+   ========================================================= */
+
+
+/* ---------- Page ---------- */
+
+const loginPage =
+    document.getElementById(
+        "login-page"
+    );
+
+const dashboardPage =
+    document.getElementById(
+        "dashboard-page"
+    );
+
+
+/* ---------- Login ---------- */
+
+const loginForm =
+    document.getElementById(
+        "login-form"
+    );
+
+const studentIdInput =
+    document.getElementById(
+        "student-id"
+    );
+
+const studentNameInput =
+    document.getElementById(
+        "student-name"
+    );
+
+const loginError =
+    document.getElementById(
+        "login-error"
+    );
+
+
+/* ---------- Dashboard ---------- */
+
+const welcomeText =
+    document.getElementById(
+        "welcome-text"
+    );
+
+const logoutBtn =
+    document.getElementById(
+        "logout-btn"
+    );
+
+const actionMessage =
+    document.getElementById(
+        "action-message"
+    );
+
+
+/* ---------- Summary ---------- */
+
+const summaryTotal =
+    document.getElementById(
+        "summary-total"
+    );
+
+const summaryAvailable =
+    document.getElementById(
+        "summary-available"
+    );
+
+const summaryMine =
+    document.getElementById(
+        "summary-mine"
+    );
+
+
+/* ---------- Tables ---------- */
+
+const booksTableBody =
+    document.getElementById(
+        "books-table-body"
+    );
+
+const availableBooksTableBody =
+    document.getElementById(
+        "available-books-table-body"
+    );
+
+const borrowedTableBody =
+    document.getElementById(
+        "borrowed-table-body"
+    );
+
+const borrowCountText =
+    document.getElementById(
+        "borrow-count-text"
+    );
+
+
+/* =========================================================
+   6. PAGE NAVIGATION
+   ========================================================= */
+
+function activatePage(
+    pageToShow,
+    pageToHide
+) {
+
+    pageToHide.hidden = true;
+
+    pageToHide.classList.remove(
+        "page-enter"
+    );
+
+
+    pageToShow.hidden = false;
+
+
+    pageToShow.classList.remove(
+        "page-enter"
+    );
+
+
+    void pageToShow.offsetWidth;
+
+
+    pageToShow.classList.add(
+        "page-enter"
+    );
 }
 
-function formatDate(isoDateString) {
-  const date = new Date(isoDateString);
-  return date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric"
-  });
-}
-
-/* ---------- 5. Identity normalization ----------
-   A student ID must always resolve to the same identity regardless of
-   case or stray whitespace, otherwise "S001" and "s001" would be treated
-   as two different students and each would get their own borrow quota.
-   Every place that stores or compares a studentId goes through this. */
-
-function normalizeStudentId(rawId) {
-  return rawId.trim().toUpperCase();
-}
-
-/* User ID must be exactly "S" + 3 digits, uppercase (e.g. S001).
-   Checked against the raw, un-normalized input so that a lowercase
-   "s001" is correctly rejected as an invalid format, not silently
-   accepted and upper-cased. */
-function isValidStudentIdFormat(rawId) {
-  return STUDENT_ID_PATTERN.test(rawId);
-}
-
-/* ---------- 6. DOM references ---------- */
-
-const loginPage = document.getElementById("login-page");
-const dashboardPage = document.getElementById("dashboard-page");
-
-const loginForm = document.getElementById("login-form");
-const studentIdInput = document.getElementById("student-id");
-const studentNameInput = document.getElementById("student-name");
-const loginError = document.getElementById("login-error");
-
-const welcomeText = document.getElementById("welcome-text");
-const logoutBtn = document.getElementById("logout-btn");
-const actionMessage = document.getElementById("action-message");
-
-const summaryTotal = document.getElementById("summary-total");
-const summaryAvailable = document.getElementById("summary-available");
-const summaryMine = document.getElementById("summary-mine");
-
-const booksTableBody = document.getElementById("books-table-body");
-const availableBooksTableBody = document.getElementById("available-books-table-body");
-const borrowedTableBody = document.getElementById("borrowed-table-body");
-const borrowCountText = document.getElementById("borrow-count-text");
-
-/* ---------- 7. Session ---------- */
-
-function checkSession() {
-  // getValidSession() clears any missing/corrupt/unknown-student/
-  // mismatched-name session as a side effect, so only a genuinely
-  // valid session ever leads to the dashboard.
-  const session = getValidSession();
-  if (session) {
-    showDashboardPage();
-  } else {
-    showLoginPage();
-  }
-}
-
-/* ---------- 8. Page / View navigation ----------
-   Only index.html exists, so "navigating" means toggling which page
-   container is visible, with a single fade/slide transition on the
-   page that becomes active. */
-
-function activatePage(pageToShow, pageToHide) {
-  pageToHide.hidden = true;
-  pageToHide.classList.remove("page-enter");
-
-  pageToShow.hidden = false;
-
-  // Restart the animation every time this page becomes active, even if
-  // it was shown before (e.g. logging in again after logging out).
-  pageToShow.classList.remove("page-enter");
-  void pageToShow.offsetWidth; // force reflow so the animation replays
-  pageToShow.classList.add("page-enter");
-}
 
 function showLoginPage() {
-  activatePage(loginPage, dashboardPage);
+
+    activatePage(
+        loginPage,
+        dashboardPage
+    );
 }
+
 
 function showDashboardPage() {
-  // Re-validate before ever showing the dashboard. This makes
-  // showDashboardPage() safe to call from anywhere (not just after
-  // login) without risking a dashboard render for an invalid session.
-  const session = getValidSession();
-  if (!session) {
-    showLoginPage();
-    return;
-  }
 
-  activatePage(dashboardPage, loginPage);
+    const session =
+        getSession();
 
-  welcomeText.textContent = `Signed in as ${session.name} (${session.studentId})`;
 
-  renderBooksTable();
-  renderAvailableBooksTable();
-  renderBorrowedTable();
-  renderSummary();
+    if (!session) {
+
+        showLoginPage();
+
+        return;
+    }
+
+
+    activatePage(
+        dashboardPage,
+        loginPage
+    );
+
+
+    welcomeText.textContent =
+        `Signed in as ${session.name} (${session.studentId})`;
+
+
+    /*
+       Ambil semua data terbaru dari API.
+    */
+
+    loadDashboard();
 }
 
-/* ---------- 9. Authentication ---------- */
 
-function handleLogin(event) {
-  event.preventDefault();
+/* =========================================================
+   7. LOGIN
+   ========================================================= */
 
-  const rawStudentId = studentIdInput.value.trim();
+async function handleLogin(event) {
 
-  // 1. User ID must not be empty.
-  if (!rawStudentId) {
-    showLoginError("User ID wajib diisi.");
-    return;
-  }
+    event.preventDefault();
 
-  // 2. User ID must follow the required format: "S" + exactly 3 digits.
-  if (!isValidStudentIdFormat(rawStudentId)) {
-    showLoginError("User ID tidak valid. Gunakan format S001.");
-    return;
-  }
 
-  // 3. User ID must belong to a registered student - no auto-registration.
-  //    Format alone is not enough: e.g. "S999" has a valid format but is
-  //    rejected here if it isn't in the roster. Lookup goes against
-  //    VALID_STUDENTS directly (the authoritative roster), not whatever
-  //    happens to be sitting in localStorage, so a leftover legacy
-  //    student from an older version of the app can never log in.
-  const registeredStudent = findValidStudentById(rawStudentId);
+    const studentId =
+        studentIdInput.value.trim();
 
-  if (!registeredStudent) {
-    showLoginError("User ID tidak terdaftar. Silakan gunakan User ID yang valid.");
-    return;
-  }
+    const name =
+        studentNameInput.value.trim();
 
-  // 4. The typed Name must match the registered student's own name.
-  //    Without this check, anyone who simply knows a valid, registered
-  //    Student ID (e.g. "S001") could sign in as that student - the ID
-  //    would effectively be usable by anyone, not just its real owner.
-  const rawStudentName = studentNameInput.value.trim();
-  if (!rawStudentName) {
-    showLoginError("Name wajib diisi.");
-    return;
-  }
-  if (rawStudentName.toLowerCase() !== registeredStudent.name.toLowerCase()) {
-    showLoginError("User ID dan Name tidak cocok. Periksa kembali data kamu.");
-    return;
-  }
 
-  hideLoginError();
+    /* ---------- Validasi Student ID ---------- */
 
-  // Session uses the registered student's own name, not whatever was
-  // typed in the Name field - identity comes from the roster, not the form.
-  saveSession({ studentId: registeredStudent.studentId, name: registeredStudent.name });
+    if (!studentId) {
 
-  studentIdInput.value = "";
-  studentNameInput.value = "";
+        showLoginError(
+            "User ID wajib diisi."
+        );
 
-  showDashboardPage();
+        return;
+    }
+
+
+    if (
+        !isValidStudentIdFormat(
+            studentId
+        )
+    ) {
+
+        showLoginError(
+            "User ID tidak valid. Gunakan format S001."
+        );
+
+        return;
+    }
+
+
+    /* ---------- Validasi Name ---------- */
+
+    if (!name) {
+
+        showLoginError(
+            "Name wajib diisi."
+        );
+
+        return;
+    }
+
+
+    hideLoginError();
+
+
+    try {
+
+        const result =
+            await apiRequest(
+                `${LOGIN_SERVICE_URL}/login`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        studentId:
+                            normalizeStudentId(
+                                studentId
+                            ),
+
+                        name: name
+                    })
+                },
+                false
+            );
+
+
+        /*
+           Login berhasil.
+
+           Data berasal dari:
+           Login Service → MySQL
+        */
+
+        saveSession({
+
+            userId:
+                result.data.id,
+
+            username:
+                result.data.username,
+
+            studentId:
+                result.data.studentId,
+
+            name:
+                result.data.nama
+        });
+
+
+        studentIdInput.value = "";
+
+        studentNameInput.value = "";
+
+
+        showDashboardPage();
+
+
+    } catch (error) {
+
+        console.error(
+            "Login gagal:",
+            error
+        );
+
+
+        showLoginError(
+            error.message ||
+            "Login gagal."
+        );
+    }
 }
+
+
+/* =========================================================
+   8. LOGOUT
+   ========================================================= */
 
 function handleLogout() {
-  clearSession();
-  showLoginPage();
+
+    clearSession();
+
+    showLoginPage();
 }
+
+
+/* =========================================================
+   9. LOGIN ERROR
+   ========================================================= */
 
 function showLoginError(message) {
-  loginError.textContent = message;
-  loginError.hidden = false;
+
+    loginError.textContent =
+        message;
+
+    loginError.hidden =
+        false;
 }
+
 
 function hideLoginError() {
-  loginError.hidden = true;
+
+    loginError.hidden =
+        true;
 }
 
-/* ---------- 10. Book rendering ---------- */
 
-function renderBooksTable() {
-  const session = getValidSession();
-  if (!session) {
-    showLoginPage();
-    return;
-  }
+/* =========================================================
+   10. BOOK SERVICE
+   ========================================================= */
 
-  const books = getBooks();
-  const activeCount = countActiveBorrowsForStudent(session.studentId);
 
-  booksTableBody.innerHTML = "";
+/*
+   GET SEMUA BUKU
 
-  if (books.length === 0) {
-    booksTableBody.innerHTML =
-      '<tr class="empty-row"><td colspan="3">No books in the catalog.</td></tr>';
-    return;
-  }
+   Book Service:
+   GET /books
+*/
 
-  books.forEach((book) => {
-    const row = document.createElement("tr");
+async function getBooks() {
 
-    const titleCell = document.createElement("td");
-    titleCell.textContent = book.title;
+    const result =
+        await apiRequest(
+            `${BOOK_SERVICE_URL}/books`
+        );
 
-    const statusCell = document.createElement("td");
-    const badge = document.createElement("span");
-    badge.classList.add("status-badge");
-    if (book.isBorrowed) {
-      badge.classList.add("status-borrowed");
-      badge.textContent = "Borrowed";
-    } else {
-      badge.classList.add("status-available");
-      badge.textContent = "Available";
+
+    return result.data || result;
+}
+
+
+/*
+   GET BUKU TERSEDIA
+
+   Book Service:
+   GET /books/available
+*/
+
+async function getAvailableBooks() {
+
+    const result =
+        await apiRequest(
+            `${BOOK_SERVICE_URL}/books/available`
+        );
+
+
+    return result.data || result;
+}
+
+
+/* =========================================================
+   11. BORROW SERVICE
+   ========================================================= */
+
+
+/*
+   GET PEMINJAMAN
+
+   Bisa:
+   GET /peminjaman
+   atau
+   GET /peminjaman?studentId=S002
+*/
+
+async function getBorrowings(
+    studentId = null
+) {
+
+    let url =
+        `${BORROW_SERVICE_URL}/peminjaman`;
+
+
+    if (studentId) {
+
+        url +=
+            `?studentId=${encodeURIComponent(
+                studentId
+            )}`;
     }
-    statusCell.appendChild(badge);
 
-    const actionCell = document.createElement("td");
-    const borrowBtn = document.createElement("button");
-    borrowBtn.textContent = "Borrow";
-    borrowBtn.classList.add("borrow-btn");
-    borrowBtn.disabled = book.isBorrowed || activeCount >= MAX_ACTIVE_BORROWS;
-    borrowBtn.addEventListener("click", () => handleBorrow(book.bookId));
-    actionCell.appendChild(borrowBtn);
 
-    row.appendChild(titleCell);
-    row.appendChild(statusCell);
-    row.appendChild(actionCell);
-    booksTableBody.appendChild(row);
-  });
+    const result =
+        await apiRequest(url);
+
+
+    return result.data || result;
 }
 
-function renderAvailableBooksTable() {
-  const books = getBooks();
-  const availableBooks = books.filter((book) => book.isBorrowed === false);
 
-  availableBooksTableBody.innerHTML = "";
+/* =========================================================
+   12. LOAD DASHBOARD
+   ========================================================= */
 
-  if (availableBooks.length === 0) {
-    availableBooksTableBody.innerHTML =
-      '<tr class="empty-row"><td>No books are currently available.</td></tr>';
-    return;
-  }
+async function loadDashboard() {
 
-  availableBooks.forEach((book) => {
-    const row = document.createElement("tr");
-    const titleCell = document.createElement("td");
-    titleCell.textContent = book.title;
-    row.appendChild(titleCell);
-    availableBooksTableBody.appendChild(row);
-  });
+    const session =
+        getSession();
+
+
+    if (!session) {
+
+        showLoginPage();
+
+        return;
+    }
+
+
+    try {
+
+        /*
+           Semua data diambil dari microservice.
+        */
+
+        const [
+            books,
+            availableBooks,
+            myBorrowings
+        ] = await Promise.all([
+
+            getBooks(),
+
+            getAvailableBooks(),
+
+            getBorrowings(
+                session.studentId
+            )
+        ]);
+
+
+        /*
+           Simpan sementara hanya di memory,
+           bukan localStorage.
+        */
+
+        renderBooksTable(
+            books,
+            myBorrowings
+        );
+
+
+        renderAvailableBooksTable(
+            availableBooks
+        );
+
+
+        renderBorrowedTable(
+            myBorrowings,
+            books
+        );
+
+
+        renderSummary(
+            books,
+            availableBooks,
+            myBorrowings
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            "Gagal memuat dashboard:",
+            error
+        );
+
+
+        showActionMessage(
+            error.message ||
+            "Gagal mengambil data dari server.",
+            "error"
+        );
+    }
 }
 
-function renderSummary() {
-  const session = getValidSession();
-  if (!session) {
-    showLoginPage();
-    return;
-  }
 
-  const books = getBooks();
+/* =========================================================
+   13. RENDER BOOK CATALOG
+   ========================================================= */
 
-  const totalCount = books.length;
-  const availableCount = books.filter((b) => b.isBorrowed === false).length;
-  const mineCount = countActiveBorrowsForStudent(session.studentId);
+function renderBooksTable(
+    books,
+    myBorrowings
+) {
 
-  summaryTotal.textContent = totalCount;
-  summaryAvailable.textContent = availableCount;
-  summaryMine.textContent = mineCount;
-}
+    booksTableBody.innerHTML =
+        "";
 
-/* ---------- 11. Borrowing ---------- */
 
-function countActiveBorrowsForStudent(studentId) {
-  const records = getRecords();
-  const normalizedId = normalizeStudentId(studentId);
-  // Treat a record as active whenever it is NOT explicitly "returned",
-  // rather than requiring an exact "active" match. This way, a record
-  // with a missing/inconsistent status field still counts against the
-  // student's quota instead of silently slipping through the check.
-  return records.filter(
-    (r) => normalizeStudentId(r.studentId) === normalizedId && r.status !== "returned"
-  ).length;
-}
+    if (!books || books.length === 0) {
 
-function renderBorrowedTable() {
-  const session = getValidSession();
-  if (!session) {
-    showLoginPage();
-    return;
-  }
+        booksTableBody.innerHTML = `
+            <tr class="empty-row">
+                <td colspan="3">
+                    Tidak ada buku.
+                </td>
+            </tr>
+        `;
 
-  const records = getRecords();
-  const books = getBooks();
+        return;
+    }
 
-  const sessionId = normalizeStudentId(session.studentId);
-  const activeRecords = records.filter(
-    (r) => normalizeStudentId(r.studentId) === sessionId && r.status !== "returned"
-  );
 
-  borrowedTableBody.innerHTML = "";
+    /*
+       Hitung jumlah buku aktif milik user.
+    */
 
-  if (activeRecords.length === 0) {
-    borrowedTableBody.innerHTML =
-      '<tr class="empty-row"><td colspan="4">You have no active borrowed books.</td></tr>';
-  } else {
-    activeRecords.forEach((record) => {
-      const book = books.find((b) => b.bookId === record.bookId);
-      const row = document.createElement("tr");
+    const activeCount =
+        (myBorrowings || [])
+            .filter(
+                record =>
+                    record.status !==
+                    "returned"
+            )
+            .length;
 
-      const titleCell = document.createElement("td");
-      titleCell.textContent = book ? book.title : "(unknown book)";
 
-      const borrowedCell = document.createElement("td");
-      borrowedCell.textContent = formatDate(record.borrowDate);
+    books.forEach(book => {
 
-      const dueCell = document.createElement("td");
-      dueCell.textContent = formatDate(record.dueDate);
+        const row =
+            document.createElement(
+                "tr"
+            );
 
-      const actionCell = document.createElement("td");
-      const returnBtn = document.createElement("button");
-      returnBtn.textContent = "Return";
-      returnBtn.classList.add("return-btn");
-      returnBtn.addEventListener("click", () => handleReturn(record.recordId));
-      actionCell.appendChild(returnBtn);
 
-      row.appendChild(titleCell);
-      row.appendChild(borrowedCell);
-      row.appendChild(dueCell);
-      row.appendChild(actionCell);
-      borrowedTableBody.appendChild(row);
+        /* ---------- Judul ---------- */
+
+        const titleCell =
+            document.createElement(
+                "td"
+            );
+
+
+        titleCell.textContent =
+            book.judul;
+
+
+        /* ---------- Status ---------- */
+
+        const statusCell =
+            document.createElement(
+                "td"
+            );
+
+
+        const badge =
+            document.createElement(
+                "span"
+            );
+
+
+        badge.classList.add(
+            "status-badge"
+        );
+
+
+        if (
+            book.status ===
+            "dipinjam"
+        ) {
+
+            badge.classList.add(
+                "status-borrowed"
+            );
+
+            badge.textContent =
+                "Borrowed";
+
+        } else {
+
+            badge.classList.add(
+                "status-available"
+            );
+
+            badge.textContent =
+                "Available";
+        }
+
+
+        statusCell.appendChild(
+            badge
+        );
+
+
+        /* ---------- Action ---------- */
+
+        const actionCell =
+            document.createElement(
+                "td"
+            );
+
+
+        const borrowBtn =
+            document.createElement(
+                "button"
+            );
+
+
+        borrowBtn.textContent =
+            "Borrow";
+
+
+        borrowBtn.classList.add(
+            "borrow-btn"
+        );
+
+
+        /*
+           Tidak bisa pinjam kalau:
+           1. buku sedang dipinjam
+           2. user sudah punya 3 buku
+        */
+
+        borrowBtn.disabled =
+            book.status ===
+            "dipinjam" ||
+            activeCount >=
+            MAX_ACTIVE_BORROWS;
+
+
+        borrowBtn.addEventListener(
+            "click",
+            () =>
+                handleBorrow(
+                    book.id
+                )
+        );
+
+
+        actionCell.appendChild(
+            borrowBtn
+        );
+
+
+        /* ---------- Row ---------- */
+
+        row.appendChild(
+            titleCell
+        );
+
+        row.appendChild(
+            statusCell
+        );
+
+        row.appendChild(
+            actionCell
+        );
+
+
+        booksTableBody.appendChild(
+            row
+        );
     });
-  }
-
-  borrowCountText.textContent = `Active borrows: ${activeRecords.length} / ${MAX_ACTIVE_BORROWS}`;
 }
 
-function handleBorrow(bookId) {
-  const session = getValidSession();
-  if (!session) {
-    showLoginPage();
-    return;
-  }
 
-  const books = getBooks();
-  const records = getRecords();
+/* =========================================================
+   14. AVAILABLE BOOKS
+   ========================================================= */
 
-  const book = books.find((b) => b.bookId === bookId);
+function renderAvailableBooksTable(
+    books
+) {
 
-  // Rule: a borrowed book cannot be borrowed by another student.
-  if (!book || book.isBorrowed) {
-    showActionMessage("This book is no longer available.", "error");
-    renderBooksTable();
-    return;
-  }
+    availableBooksTableBody.innerHTML =
+        "";
 
-  // Rule: a student can have a maximum of 3 active borrowed books.
-  const activeCount = countActiveBorrowsForStudent(session.studentId);
-  if (activeCount >= MAX_ACTIVE_BORROWS) {
-    showActionMessage(
-      `You already have ${MAX_ACTIVE_BORROWS} active borrowed books. Maximum reached.`,
-      "error"
-    );
-    return;
-  }
 
-  // All validations passed: create the borrow record.
-  const borrowDate = todayISO();
-  const dueDate = addDays(borrowDate, BORROW_PERIOD_DAYS);
+    if (
+        !books ||
+        books.length === 0
+    ) {
 
-  records.push({
-    recordId: `R${Date.now()}`,
-    studentId: normalizeStudentId(session.studentId),
-    bookId: book.bookId,
-    borrowDate,
-    dueDate,
-    status: "active"
-  });
-  saveRecords(records);
+        availableBooksTableBody.innerHTML = `
+            <tr class="empty-row">
+                <td>
+                    Tidak ada buku yang tersedia.
+                </td>
+            </tr>
+        `;
 
-  // Rule: a borrowed book cannot be borrowed by another student
-  // (enforced going forward via this flag).
-  book.isBorrowed = true;
-  saveBooks(books);
+        return;
+    }
 
-  showActionMessage(`"${book.title}" borrowed successfully. Due ${formatDate(dueDate)}.`, "success");
 
-  renderBooksTable();
-  renderAvailableBooksTable();
-  renderBorrowedTable();
-  renderSummary();
+    books.forEach(book => {
+
+        const row =
+            document.createElement(
+                "tr"
+            );
+
+
+        const titleCell =
+            document.createElement(
+                "td"
+            );
+
+
+        titleCell.textContent =
+            book.judul;
+
+
+        row.appendChild(
+            titleCell
+        );
+
+
+        availableBooksTableBody.appendChild(
+            row
+        );
+    });
 }
 
-function handleReturn(recordId) {
-  const session = getValidSession();
-  if (!session) {
-    showLoginPage();
-    return;
-  }
 
-  const records = getRecords();
-  const books = getBooks();
+/* =========================================================
+   15. MY BORROWED BOOKS
+   ========================================================= */
 
-  const record = records.find((r) => r.recordId === recordId);
-  if (!record || record.status === "returned") {
-    showActionMessage("This book has already been returned.", "error");
-    return;
-  }
+function renderBorrowedTable(
+    records,
+    books
+) {
 
-  // Ownership check: a student may only return a book that they
-  // themselves borrowed. Without this, any signed-in student could
-  // return - and free up - a book borrowed by someone else just by
-  // knowing/guessing its recordId.
-  if (normalizeStudentId(record.studentId) !== normalizeStudentId(session.studentId)) {
-    showActionMessage("You are not authorized to return this book.", "error");
-    return;
-  }
+    borrowedTableBody.innerHTML =
+        "";
 
-  // Mark the record as returned.
-  record.status = "returned";
-  saveRecords(records);
 
-  // Make the book available again.
-  const book = books.find((b) => b.bookId === record.bookId);
-  if (book) {
-    book.isBorrowed = false;
-    saveBooks(books);
-  }
+    /*
+       Hanya tampilkan peminjaman aktif.
+    */
 
-  showActionMessage(`"${book ? book.title : "Book"}" returned successfully.`, "success");
+    const activeRecords =
+        (records || []).filter(
+            record =>
+                record.status !==
+                "returned"
+        );
 
-  renderBooksTable();
-  renderAvailableBooksTable();
-  renderBorrowedTable();
-  renderSummary();
+
+    if (
+        activeRecords.length === 0
+    ) {
+
+        borrowedTableBody.innerHTML = `
+            <tr class="empty-row">
+                <td colspan="4">
+                    You have no active borrowed books.
+                </td>
+            </tr>
+        `;
+
+    } else {
+
+        activeRecords.forEach(
+            record => {
+
+                const row =
+                    document.createElement(
+                        "tr"
+                    );
+
+
+                /*
+                   Cari buku berdasarkan ID.
+
+                   Database:
+                   book.id = angka
+
+                   Borrow:
+                   record.bookId = angka
+                */
+
+                const book =
+                    books.find(
+                        item =>
+                            Number(item.id) ===
+                            Number(record.bookId)
+                    );
+
+
+                /* ---------- Title ---------- */
+
+                const titleCell =
+                    document.createElement(
+                        "td"
+                    );
+
+
+                titleCell.textContent =
+                    book
+                        ? book.judul
+                        : record.title ||
+                          "(Buku tidak ditemukan)";
+
+
+                /* ---------- Borrow Date ---------- */
+
+                const borrowDateCell =
+                    document.createElement(
+                        "td"
+                    );
+
+
+                borrowDateCell.textContent =
+                    formatDate(
+                        record.borrowDate
+                    );
+
+
+                /* ---------- Due Date ---------- */
+
+                const dueDateCell =
+                    document.createElement(
+                        "td"
+                    );
+
+
+                dueDateCell.textContent =
+                    formatDate(
+                        record.dueDate
+                    );
+
+
+                /* ---------- Return ---------- */
+
+                const actionCell =
+                    document.createElement(
+                        "td"
+                    );
+
+
+                const returnBtn =
+                    document.createElement(
+                        "button"
+                    );
+
+
+                returnBtn.textContent =
+                    "Return";
+
+
+                returnBtn.classList.add(
+                    "return-btn"
+                );
+
+
+                returnBtn.addEventListener(
+                    "click",
+                    () =>
+                        handleReturn(
+                            record.recordId
+                        )
+                );
+
+
+                actionCell.appendChild(
+                    returnBtn
+                );
+
+
+                /* ---------- Row ---------- */
+
+                row.appendChild(
+                    titleCell
+                );
+
+                row.appendChild(
+                    borrowDateCell
+                );
+
+                row.appendChild(
+                    dueDateCell
+                );
+
+                row.appendChild(
+                    actionCell
+                );
+
+
+                borrowedTableBody.appendChild(
+                    row
+                );
+            }
+        );
+    }
+
+
+    borrowCountText.textContent =
+        `Active borrows: ${activeRecords.length} / ${MAX_ACTIVE_BORROWS}`;
 }
 
-function showActionMessage(message, type) {
-  actionMessage.textContent = message;
-  actionMessage.className = "action-message " + type;
-  actionMessage.hidden = false;
+
+/* =========================================================
+   16. SUMMARY
+   ========================================================= */
+
+function renderSummary(
+    books,
+    availableBooks,
+    myBorrowings
+) {
+
+    summaryTotal.textContent =
+        books.length;
+
+
+    summaryAvailable.textContent =
+        availableBooks.length;
+
+
+    const activeCount =
+        (myBorrowings || [])
+            .filter(
+                record =>
+                    record.status !==
+                    "returned"
+            )
+            .length;
+
+
+    summaryMine.textContent =
+        activeCount;
 }
 
-/* ---------- 12. Bootstrap ---------- */
+
+/* =========================================================
+   17. BORROW BOOK
+   ========================================================= */
+
+async function handleBorrow(
+    bookId
+) {
+
+    const session =
+        getSession();
+
+
+    if (!session) {
+
+        showLoginPage();
+
+        return;
+    }
+
+
+    try {
+
+        /*
+           Frontend → Borrow Service
+
+           POST /peminjaman
+        */
+
+        const result =
+            await apiRequest(
+                `${BORROW_SERVICE_URL}/peminjaman`,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+
+                        studentId:
+                            session.studentId,
+
+                        bookId:
+                            Number(bookId)
+                    })
+                }
+            );
+
+
+        showActionMessage(
+            result.message ||
+            "Buku berhasil dipinjam.",
+            "success"
+        );
+
+
+        /*
+           Ambil ulang data dari server.
+
+           Tidak menggunakan localStorage.
+        */
+
+        await loadDashboard();
+
+
+    } catch (error) {
+
+        console.error(
+            "Gagal meminjam buku:",
+            error
+        );
+
+
+        showActionMessage(
+            error.message ||
+            "Gagal meminjam buku.",
+            "error"
+        );
+    }
+}
+
+
+/* =========================================================
+   18. RETURN BOOK
+   ========================================================= */
+
+async function handleReturn(
+    recordId
+) {
+
+    const session =
+        getSession();
+
+
+    if (!session) {
+
+        showLoginPage();
+
+        return;
+    }
+
+
+    try {
+
+        /*
+           Frontend → Borrow Service
+
+           PATCH /peminjaman/:recordId/kembalikan
+        */
+
+        const result =
+            await apiRequest(
+                `${BORROW_SERVICE_URL}/peminjaman/${encodeURIComponent(
+                    recordId
+                )}/kembalikan`,
+                {
+                    method: "PATCH",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+
+                        studentId:
+                            session.studentId
+                    })
+                }
+            );
+
+
+        showActionMessage(
+            result.message ||
+            "Buku berhasil dikembalikan.",
+            "success"
+        );
+
+
+        /*
+           Ambil data terbaru.
+        */
+
+        await loadDashboard();
+
+
+    } catch (error) {
+
+        console.error(
+            "Gagal mengembalikan buku:",
+            error
+        );
+
+
+        showActionMessage(
+            error.message ||
+            "Gagal mengembalikan buku.",
+            "error"
+        );
+    }
+}
+
+
+/* =========================================================
+   19. ACTION MESSAGE
+   ========================================================= */
+
+function showActionMessage(
+    message,
+    type = "success"
+) {
+
+    actionMessage.textContent =
+        message;
+
+
+    actionMessage.hidden =
+        false;
+
+
+    actionMessage.className =
+        `action-message ${type}`;
+}
+
+
+/* =========================================================
+   20. INITIALIZE APPLICATION
+   ========================================================= */
 
 function init() {
-  initializeData();
 
-  loginForm.addEventListener("submit", handleLogin);
-  logoutBtn.addEventListener("click", handleLogout);
+    /*
+       Login form
+    */
 
-  checkSession();
+    loginForm.addEventListener(
+        "submit",
+        handleLogin
+    );
+
+
+    /*
+       Logout
+    */
+
+    logoutBtn.addEventListener(
+        "click",
+        handleLogout
+    );
+
+
+    /*
+       Cek apakah user masih punya session.
+    */
+
+    const session =
+        getSession();
+
+
+    if (session) {
+
+        showDashboardPage();
+
+    } else {
+
+        showLoginPage();
+    }
 }
 
-document.addEventListener("DOMContentLoaded", init);
+
+/* =========================================================
+   21. START
+   ========================================================= */
+
+document.addEventListener(
+    "DOMContentLoaded",
+    init
+);

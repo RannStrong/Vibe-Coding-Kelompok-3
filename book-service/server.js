@@ -38,14 +38,17 @@ app.use((req, res, next) => {
     "Access-Control-Allow-Methods",
     "GET, POST, PATCH, PUT, DELETE, OPTIONS"
   );
-  res.header("Access-Control-Allow-Headers", "Content-Type");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, X-API-Key"
+  );
 
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
 
   next();
-});
+}); 
 
 // --------------------------------------------------------
 // GET /books
@@ -103,7 +106,7 @@ app.get("/books/:id", cekApiKey, async (req, res) => {
   const id = parseInt(req.params.id);
 
   if (Number.isNaN(id)) {
-    return res.status(400).json({
+    return res.status(400).json({ 
       message: "id harus berupa angka",
     });
   }
