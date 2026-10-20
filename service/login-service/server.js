@@ -1,15 +1,22 @@
 const express = require("express");
 const cors = require("cors");
-require("dotenv").config();
+const jwt = require("jsonwebtoken");
+require("dotenv").config({
+    path: require("path").resolve(__dirname, "../.env")
+});
 
 const db = require("./db");
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
 const PORT = 3002;
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+    throw new Error("JWT_SECRET belum diatur di file service/.env");
+}
 
 app.post("/login", async (req, res) => {
     const { studentId, name } = req.body;
@@ -36,8 +43,23 @@ app.post("/login", async (req, res) => {
 
         const user = rows[0];
 
-        res.json({
+        const token = jwt.sign(
+            {
+                id: user.id,
+                username: user.username,
+                studentId: user.student_id
+            },
+            JWT_SECRET,
+            {
+                expiresIn: "2h"
+            }
+        );
+
+        return res.json({
             message: "Login berhasil.",
+            token,
+            tokenType: "Bearer",
+            expiresIn: 7200,
             data: {
                 id: user.id,
                 username: user.username,
@@ -45,12 +67,10 @@ app.post("/login", async (req, res) => {
                 studentId: user.student_id
             }
         });
-
     } catch (error) {
-        console.error("Gagal melakukan login:");
-        console.error(error);
+        console.error("Gagal melakukan login:", error);
 
-        res.status(500).json({
+        return res.status(500).json({
             message: "Terjadi kesalahan pada server."
         });
     }
